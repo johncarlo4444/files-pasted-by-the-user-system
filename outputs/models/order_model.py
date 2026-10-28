@@ -207,6 +207,24 @@ def list_orders(
         connection.close()
 
 
+def list_pending_orders() -> list[dict]:
+    """List unpaid orders in the order they entered the cashier queue."""
+    connection = get_connection()
+    try:
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                "SELECT order_id, order_code, order_type, total_amount, created_at "
+                "FROM orders WHERE payment_status='Unpaid' "
+                "AND order_status='Pending Payment' "
+                "ORDER BY created_at ASC, order_id ASC",
+            )
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
 def record_payment(
     order_code: str,
     payment_method: str,
@@ -390,3 +408,140 @@ def cancel_order(order_code: str) -> None:
             cursor.close()
     finally:
         connection.close()
+
+def _require_admin_override(username: str, password: str) -> dict:
+    from models.user_model import authenticate
+
+    user = authenticate(username, password)
+    if not user or user["role"] != "Admin":
+        raise PermissionError("An active administrator account is required for this action.")
+    return user
+
+
+def update_order_item_quantity(
+    order_id: int,
+    order_item_id: int,
+    quantity: int,
+    *,
+    admin_username: str | None = None,
+    admin_password: str | None = None,
+) -> Decimal:
+    """Update an unpaid line; reducing its quantity requires admin verification."""
+    quantity = int(quantity)
+    if quantity < 1:
+        raise ValueError("Quantity must be at least one. Use Remove Item to delete a line.")
+
+    connection = get_connection()
+    try:
+        connection.start_transaction()
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                "SELECT payment_status, order_status FROM orders WHERE order_id=%s FOR UPDATE",
+                (order_id,),
+            )
+            order = cursor.fetchone()
+            if not order:
+                raise ValueError("Order was not found.")
+            if order["payment_status"] != "Unpaid" or order["order_status"] != "Pending Payment":
+                raise ValueError("Only unpaid pending orders can be edited.")
+
+            cursor.execute(
+                "SELECT quantity, subtotal FROM order_items "
+                "WHERE order_item_id=%s AND order_id=%s FOR UPDATE",
+                (order_item_id, order_id),
+            )
+            item = cursor.fetchone()
+            if not item:
+                raise ValueError("The selected item is no longer in this order.")
+            old_quantity = int(item["quantity"])
+            if quantity < old_quantity:
+                _require_admin_override(admin_username or "", admin_password or "")
+
+            unit_total = _amount(Decimal(str(item["subtotal"])) / old_quantity)
+            new_subtotal = _amount(unit_total * quantity)
+            cursor.execute(
+                "UPDATE order_items SET quantity=%s, subtotal=%s WHERE order_item_id=%s",
+                (quantity, new_subtotal, order_item_id),
+            )
+            cursor.execute(
+                "SELECT COALESCE(SUM(subtotal), 0) AS total_amount "
+                "FROM order_items WHERE order_id=%s",
+                (order_id,),
+            )
+            total = _amount(cursor.fetchone()["total_amount"])
+            cursor.execute("UPDATE orders SET total_amount=%s WHERE order_id=%s", (total, order_id))
+            connection.commit()
+            return total
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+
+def remove_order_item(
+    order_id: int,
+    order_item_id: int,
+    admin_username: str,
+    admin_password: str,
+) -> Decimal:
+    """Remove a line from an unpaid order after an authenticated admin override."""
+    _require_admin_override(admin_username, admin_password)
+    connection = get_connection()
+    try:
+        connection.start_transaction()
+        cursor = connection.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                "SELECT payment_status, order_status FROM orders WHERE order_id=%s FOR UPDATE",
+                (order_id,),
+            )
+            order = cursor.fetchone()
+            if not order:
+                raise ValueError("Order was not found.")
+            if order["payment_status"] != "Unpaid" or order["order_status"] != "Pending Payment":
+                raise ValueError("Only unpaid pending orders can have items removed.")
+            cursor.execute(
+                "SELECT order_item_id FROM order_items "
+                "WHERE order_item_id=%s AND order_id=%s FOR UPDATE",
+                (order_item_id, order_id),
+            )
+            if not cursor.fetchone():
+                raise ValueError("The selected item is no longer in this order.")
+            cursor.execute("SELECT COUNT(*) AS item_count FROM order_items WHERE order_id=%s", (order_id,))
+            if int(cursor.fetchone()["item_count"]) <= 1:
+                raise ValueError("Use Cancel Order to remove the last item from an order.")
+            cursor.execute(
+                "DELETE FROM order_items WHERE order_item_id=%s AND order_id=%s",
+                (order_item_id, order_id),
+            )
+            cursor.execute(
+                "SELECT COALESCE(SUM(subtotal), 0) AS total_amount "
+                "FROM order_items WHERE order_id=%s",
+                (order_id,),
+            )
+            total = _amount(cursor.fetchone()["total_amount"])
+            cursor.execute("UPDATE orders SET total_amount=%s WHERE order_id=%s", (total, order_id))
+            connection.commit()
+            return total
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+
+def cancel_order_as_cashier(
+    order_code: str,
+    admin_username: str,
+    admin_password: str,
+) -> None:
+    """Cancel a cashier-selected order only after a valid admin override."""
+    _require_admin_override(admin_username, admin_password)
+    cancel_order(order_code)
+

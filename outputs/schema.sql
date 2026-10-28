@@ -14,6 +14,12 @@ CREATE TABLE IF NOT EXISTS users (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS app_settings (
+    setting_key VARCHAR(100) PRIMARY KEY,
+    setting_value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS categories (
     category_id INT AUTO_INCREMENT PRIMARY KEY,
     category_name VARCHAR(100) NOT NULL UNIQUE,
@@ -110,9 +116,11 @@ ON DUPLICATE KEY UPDATE username = VALUES(username);
 INSERT INTO categories (category_id, category_name) VALUES
     (1, 'Burgers & Steaks'),
     (2, 'Pizza & Pasta'),
-    (3, 'Fried Chicken & Tacos'),
+    (3, 'Chicken & Tacos'),
     (4, 'Asian Classics'),
-    (5, 'Sides, Desserts & Drinks')
+    (5, 'Sides, Desserts & Drinks'),
+    (6, 'Combos'),
+    (7, 'Rice Meals')
 ON DUPLICATE KEY UPDATE category_name = VALUES(category_name);
 
 INSERT INTO products (category_id, product_name, description, price, is_available) VALUES
@@ -164,3 +172,4 @@ FROM products p JOIN inventory i ON
     (p.product_name = 'Italian Chocolate Gelato' AND i.item_name = 'Gelato Servings') OR
     (p.product_name = 'Iced Matcha Green Tea Latte' AND i.item_name = 'Matcha Servings')
 ON DUPLICATE KEY UPDATE quantity_required = VALUES(quantity_required);
+

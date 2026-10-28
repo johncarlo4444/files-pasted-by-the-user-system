@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from models.receipt_model import ReceiptData, format_receipt, save_receipt, save_receipt_pdf
+from views.common import size_popup
 
 
 class ReceiptModal(tk.Toplevel):
@@ -16,12 +17,10 @@ class ReceiptModal(tk.Toplevel):
         self.on_next = on_next
         self.title(f"Official Digital Receipt — {receipt.order_code}")
         self.transient(parent.winfo_toplevel())
-        self.geometry("520x700")
-        self.minsize(440, 520)
         self.grab_set()
         self.configure(background="white")
 
-        ttk.Label(self, text="WORLD FAST FOOD EXPRESS", style="ReceiptTitle.TLabel").pack(
+        ttk.Label(self, text=receipt.restaurant_name, style="ReceiptTitle.TLabel").pack(
             anchor="center", padx=14, pady=(14, 2)
         )
         ttk.Label(self, text="Official Digital Receipt", style="ReceiptSubtitle.TLabel").pack(
@@ -46,6 +45,7 @@ class ReceiptModal(tk.Toplevel):
         ttk.Button(actions, text="Print Receipt", command=self._print).pack(side="left", padx=8)
         ttk.Button(actions, text="Close / Next Transaction", command=self._next).pack(side="right")
         self.protocol("WM_DELETE_WINDOW", self._next)
+        size_popup(self, parent, 800, 740, min_width=660, min_height=580)
 
     def _save(self) -> None:
         try:

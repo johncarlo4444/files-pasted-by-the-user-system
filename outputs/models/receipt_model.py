@@ -10,7 +10,13 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Iterable
 
-from config import RESTAURANT_ADDRESS, RESTAURANT_BRANCH, RESTAURANT_CONTACT, RESTAURANT_NAME
+from config import (
+    RESTAURANT_ADDRESS,
+    RESTAURANT_BRANCH,
+    RESTAURANT_CONTACT,
+    RESTAURANT_NAME,
+    RESTAURANT_TAGLINE,
+)
 
 
 CENT = Decimal("0.01")
@@ -44,6 +50,7 @@ class ReceiptData:
     change_returned: Decimal | int | float | str
     timestamp: datetime = field(default_factory=datetime.now)
     restaurant_name: str = RESTAURANT_NAME
+    tagline: str = RESTAURANT_TAGLINE
     branch: str = RESTAURANT_BRANCH
     address: str = RESTAURANT_ADDRESS
     contact: str = RESTAURANT_CONTACT
@@ -56,11 +63,9 @@ def format_receipt(data: ReceiptData, *, width: int = 42) -> str:
 
     rule = "=" * width
     thin_rule = "-" * width
-    lines = [
-        data.restaurant_name.center(width),
-        data.branch.center(width),
-        data.address.center(width),
-    ]
+    lines = [data.restaurant_name.center(width)]
+    lines.extend(line.center(width) for line in textwrap.wrap(data.tagline, width=width))
+    lines.extend((data.branch.center(width), data.address.center(width)))
     lines.append(f"Contact: {data.contact}".center(width))
     lines.extend(
         [

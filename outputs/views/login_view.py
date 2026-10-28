@@ -25,12 +25,17 @@ class LoginView(ttk.Frame):
         ttk.Label(panel, text="Password").grid(row=2, column=0, sticky="w", pady=5)
         self.password = ttk.Entry(panel, width=32, show="●")
         self.password.grid(row=2, column=1, sticky="ew", padx=(15, 0), pady=5)
-        self.password.bind("<Return>", lambda _event: self.submit())
+        self.username.bind("<Return>", self._submit_on_enter)
+        self.password.bind("<Return>", self._submit_on_enter)
         buttons = ttk.Frame(panel)
         buttons.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(18, 0))
         ttk.Button(buttons, text="Back to Kiosk", command=on_back).pack(side="left")
         ttk.Button(buttons, text="Sign In", command=self.submit).pack(side="right")
         self.username.focus_set()
+
+    def _submit_on_enter(self, _event=None) -> str:
+        self.submit()
+        return "break"
 
     def submit(self) -> None:
         try:

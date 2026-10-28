@@ -1,0 +1,28 @@
+                 BITEBYTE                 
+       Crave It. Click It. Bite It.       
+               Main Branch                
+           Manila, Philippines            
+           Contact: 09123456789           
+==========================================
+Date: 2026-10-25 21:59:55
+Order: A631
+Type: Dine-In
+Cashier: admin
+------------------------------------------
+QTY  ITEM                       LINE TOTAL
+------------------------------------------
+  1  Chicken & Rice Combo                  ₱75.92
+  Customization: Regular
+------------------------------------------
+                          Subtotal: ₱75.92
+                          VAT/Taxes: ₱0.00
+                         TOTAL DUE: ₱75.92
+------------------------------------------
+Payment: Cash
+                          Tendered: ₱75.92
+                             Change: ₱0.00
+==========================================
+      Thank you for dining with us!       
+  Please present your order code at the   
+             kitchen counter.             
+==========================================

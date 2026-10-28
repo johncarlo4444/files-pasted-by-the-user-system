@@ -88,7 +88,7 @@ def initialize_database(schema_path: str | Path | None = None) -> None:
             cursor.close()
     finally:
         connection.close()
-    ensure_runtime_schema()
+    ensure_runtime_schema(normalize_categories=False)
 
     connection = get_connection(select_database=True)
     try:
@@ -100,9 +100,10 @@ def initialize_database(schema_path: str | Path | None = None) -> None:
             cursor.close()
     finally:
         connection.close()
+    normalize_menu_categories()
 
 
-def ensure_runtime_schema() -> None:
+def ensure_runtime_schema(*, normalize_categories: bool = True) -> None:
     """Apply additive upgrades needed by the current app to an existing DB.
 
     This intentionally does not replay menu inserts. It lets older installs
@@ -114,6 +115,11 @@ def ensure_runtime_schema() -> None:
     try:
         cursor = connection.cursor()
         try:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS app_settings ("
+                "setting_key VARCHAR(100) PRIMARY KEY, setting_value TEXT NOT NULL, "
+                "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP) ENGINE=InnoDB"
+            )
             cursor.execute(
                 "CREATE TABLE IF NOT EXISTS product_inventory ("
                 "product_id INT NOT NULL, inventory_id INT NOT NULL, "
@@ -270,6 +276,254 @@ def ensure_runtime_schema() -> None:
             cursor.close()
     finally:
         connection.close()
+    if normalize_categories:
+        normalize_menu_categories()
+
+
+def normalize_menu_categories() -> None:
+    """Keep the menu taxonomy consistent on existing and newly seeded databases."""
+    connection = get_connection(select_database=True)
+    try:
+        cursor = connection.cursor()
+        try:
+            # Older versions grouped rice meals under Fried Chicken & Tacos.
+            cursor.execute(
+                "UPDATE categories SET category_name=%s WHERE category_name=%s",
+                ("Chicken & Tacos", "Fried Chicken & Tacos"),
+            )
+
+            category_names = (
+                "Burgers & Steaks",
+                "Pizza & Pasta",
+                "Chicken & Tacos",
+                "Asian Classics",
+                "Sides, Desserts & Drinks",
+                "Combos",
+                "Rice Meals",
+            )
+            for category_name in category_names:
+                cursor.execute(
+                    "INSERT INTO categories (category_name) VALUES (%s) "
+                    "ON DUPLICATE KEY UPDATE category_name=VALUES(category_name)",
+                    (category_name,),
+                )
+
+            moves = {
+                "Burgers & Steaks": ("Chicken Burger Sandwich",),
+                "Chicken & Tacos": (
+                    "BBQ Chicken Wings",
+                    "Chicken Quesadilla",
+                    "Chicken Parmesan",
+                    "Classic Fried Chicken",
+                    "Crispy Golden Fried Chicken",
+                    "Lemon Herb Chicken",
+                    "Mexican Birria Street Tacos",
+                    "Spicy Fried Chicken",
+                ),
+                "Asian Classics": ("Honey Garlic Chicken",),
+                "Sides, Desserts & Drinks": (
+                    "Bubble Tea",
+                    "Coca-Cola",
+                    "Iced Coffee",
+                    "Iced Matcha Latte",
+                    "Iced Tea",
+                    "Lemonade",
+                    "Mango Shake",
+                    "Strawberry Lemonade",
+                ),
+                "Rice Meals": (
+                    "Beef & Broccoli Rice",
+                    "Butter Chicken Rice",
+                    "Chicken Teriyaki Rice Bowl",
+                    "Egg Fried Rice",
+                    "Garlic Butter Shrimp Rice",
+                    "Pork Adobo Rice",
+                    "Pork Katsu Rice",
+                    "Shrimp Fried Rice",
+                ),
+            }
+            for category_name, product_names in moves.items():
+                cursor.execute(
+                    "SELECT category_id FROM categories WHERE category_name=%s",
+                    (category_name,),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    raise RuntimeError(f"Required menu category is missing: {category_name}")
+                category_id = int(row[0])
+                for product_name in product_names:
+                    cursor.execute(
+                        "UPDATE products SET category_id=%s WHERE product_name=%s",
+                        (category_id, product_name),
+                    )
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+    ensure_asian_menu()
+    ensure_american_menu()
+
+
+def ensure_asian_menu() -> None:
+    """Add the supplied Asian dishes and bundle their photos with the app."""
+    products = (
+        (
+            "Asian Classics",
+            "Chinese Dim Sum",
+            "Assorted steamed dumplings and buns served with a savory dipping sauce.",
+            "199.00",
+            "assets/menu/chinese-dim-sum.jpg",
+        ),
+        (
+            "Rice Meals",
+            "Filipino Chicken Adobo",
+            "Chicken braised with soy sauce, vinegar, garlic, and bay leaves, served with rice.",
+            "199.00",
+            "assets/menu/filipino-chicken-adobo.jpg",
+        ),
+        (
+            "Rice Meals",
+            "Indian Chicken Biryani",
+            "Fragrant spiced basmati rice layered with chicken, herbs, and warm spices.",
+            "249.00",
+            "assets/menu/indian-chicken-biryani.jpg",
+        ),
+        (
+            "Rice Meals",
+            "Indonesian Nasi Goreng",
+            "Indonesian fried rice with chicken, vegetables, egg, and sweet soy sauce.",
+            "229.00",
+            "assets/menu/indonesian-nasi-goreng.jpg",
+        ),
+        (
+            "Rice Meals",
+            "Korean Bibimbap",
+            "Rice bowl topped with seasoned vegetables, egg, and gochujang sauce.",
+            "249.00",
+            "assets/menu/korean-bibimbap.jpg",
+        ),
+        (
+            "Asian Classics",
+            "Peking Duck",
+            "Crispy roasted duck served with pancakes, scallions, cucumber, and hoisin sauce.",
+            "599.00",
+            "assets/menu/peking-duck.jpg",
+        ),
+        (
+            "Asian Classics",
+            "Vietnamese Pho",
+            "Rice noodle soup with aromatic broth, fresh herbs, and tender beef.",
+            "249.00",
+            "assets/menu/vietnamese-pho.jpg",
+        ),
+    )
+    connection = get_connection(select_database=True)
+    try:
+        cursor = connection.cursor()
+        try:
+            for category_name, product_name, description, price, image_path in products:
+                cursor.execute(
+                    "SELECT category_id FROM categories WHERE category_name=%s",
+                    (category_name,),
+                )
+                category = cursor.fetchone()
+                if category is None:
+                    raise RuntimeError(f"Required menu category is missing: {category_name}")
+                cursor.execute(
+                    "INSERT INTO products "
+                    "(category_id, product_name, description, price, image_path) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE image_path=VALUES(image_path)",
+                    (category[0], product_name, description, price, image_path),
+                )
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+
+def ensure_american_menu() -> None:
+    """Add American Classics products and their bundled menu photos."""
+    products = (
+        (
+            "BBQ Pork Ribs",
+            "Tender pork ribs coated in smoky barbecue sauce.",
+            "399.00",
+            "assets/menu/bbq-pork-ribs.jpg",
+        ),
+        (
+            "Buffalo Chicken Wings",
+            "Crispy chicken wings tossed in tangy Buffalo sauce.",
+            "229.00",
+            "assets/menu/buffalo-chicken-wings.jpg",
+        ),
+        (
+            "Buttermilk Pancakes",
+            "Fluffy buttermilk pancakes served with butter and maple syrup.",
+            "159.00",
+            "assets/menu/buttermilk-pancakes.jpg",
+        ),
+        (
+            "Chocolate Chip Cookies",
+            "Fresh-baked cookies filled with chocolate chips.",
+            "59.00",
+            "assets/menu/chocolate-chip-cookies.jpg",
+        ),
+        (
+            "Classic American Hot Dog",
+            "Grilled hot dog in a soft bun with classic toppings.",
+            "129.00",
+            "assets/menu/classic-american-hot-dog.jpg",
+        ),
+        (
+            "Macaroni and Cheese",
+            "Tender macaroni folded into a creamy cheese sauce.",
+            "189.00",
+            "assets/menu/macaroni-and-cheese.jpg",
+        ),
+        (
+            "New England Clam Chowder",
+            "Creamy chowder with clams and potatoes.",
+            "249.00",
+            "assets/menu/new-england-clam-chowder.jpg",
+        ),
+        (
+            "Southern Fried Chicken",
+            "Crispy Southern-style chicken seasoned and fried until golden.",
+            "199.00",
+            "assets/menu/southern-fried-chicken.jpg",
+        ),
+    )
+
+    connection = get_connection(select_database=True)
+    try:
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "INSERT INTO categories (category_name) VALUES (%s) "
+                "ON DUPLICATE KEY UPDATE category_name=VALUES(category_name)",
+                ("American Classics",),
+            )
+            cursor.execute(
+                "SELECT category_id FROM categories WHERE category_name=%s",
+                ("American Classics",),
+            )
+            category = cursor.fetchone()
+            if category is None:
+                raise RuntimeError("Required menu category is missing: American Classics")
+
+            for product_name, description, price, image_path in products:
+                cursor.execute(
+                    "INSERT INTO products "
+                    "(category_id, product_name, description, price, image_path) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE image_path=VALUES(image_path)",
+                    (category[0], product_name, description, price, image_path),
+                )
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
 
 
 if __name__ == "__main__":
@@ -282,3 +536,7 @@ if __name__ == "__main__":
     database_details = verify_connection(select_database=True)
     print(f"Initialized database '{DB_CONFIG.database}' and seeded the menu.")
     print(f"Verified connection to database '{database_details['database']}'.")
+
+
+
+

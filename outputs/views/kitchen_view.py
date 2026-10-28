@@ -7,7 +7,7 @@ from datetime import datetime
 from tkinter import messagebox, ttk
 
 from models import order_model
-from views.common import php, show_error
+from views.common import enable_mousewheel_scrolling, php, show_error, size_popup
 from views.theme import PAGE
 
 
@@ -45,6 +45,7 @@ class KitchenView(ttk.Frame):
         horizontal = ttk.Scrollbar(board_wrap, orient="horizontal", command=self.board_canvas.xview)
         vertical = ttk.Scrollbar(board_wrap, orient="vertical", command=self.board_canvas.yview)
         self.board_canvas.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
+        enable_mousewheel_scrolling(self.board_canvas, axis="both")
         self.board_canvas.grid(row=0, column=0, sticky="nsew")
         vertical.grid(row=0, column=1, sticky="ns")
         horizontal.grid(row=1, column=0, sticky="ew")
@@ -189,7 +190,6 @@ class KitchenView(ttk.Frame):
             dialog = tk.Toplevel(self)
             dialog.title(f"Order {order['order_code']} Details")
             dialog.transient(self.winfo_toplevel())
-            dialog.geometry("560x450")
             panel = ttk.Frame(dialog, padding=18)
             panel.pack(fill="both", expand=True)
             ttk.Label(panel, text=f"Order {order['order_code']}", style="MenuTitle.TLabel").pack(anchor="w")
@@ -209,6 +209,7 @@ class KitchenView(ttk.Frame):
             ttk.Label(panel, text=f"Total: {php(order['total_amount'])}",
                       font=("Segoe UI", 13, "bold")).pack(anchor="e", pady=(10, 0))
             ttk.Button(panel, text="Close", command=dialog.destroy).pack(anchor="e", pady=(10, 0))
+            size_popup(dialog, self, 760, 620, min_width=640, min_height=520)
         except Exception as exc:
             show_error(exc, "Could not load order details")
 

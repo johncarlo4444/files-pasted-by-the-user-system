@@ -5,12 +5,13 @@ from __future__ import annotations
 import shutil
 import tkinter as tk
 import uuid
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from models import inventory_model, product_model, report_model, user_model
-from views.common import php, show_error
+from models import inventory_model, product_model, report_model, settings_model, user_model
+from views.common import php, show_error, size_popup
 
 
 class AdminView(ttk.Frame):
@@ -24,6 +25,7 @@ class AdminView(ttk.Frame):
         self.tabs.add(ProductsTab(self.tabs), text="Products & Categories")
         self.tabs.add(InventoryTab(self.tabs), text="Inventory")
         self.tabs.add(StaffTab(self.tabs), text="Staff Users")
+        self.tabs.add(BrandingTab(self.tabs), text="Branding")
         self.tabs.add(ReportsTab(self.tabs), text="Sales Reports")
 
 
@@ -221,6 +223,7 @@ class ProductsTab(ttk.Frame):
         buttons.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left")
         ttk.Button(buttons, text="Save Product", command=save).pack(side="right")
+        size_popup(dialog, self, 720, 560, min_width=620, min_height=480)
 
     def toggle_availability(self) -> None:
         product = self._selected()
@@ -247,7 +250,6 @@ class ProductsTab(ttk.Frame):
         dialog = tk.Toplevel(self)
         dialog.title("Menu Categories")
         dialog.transient(self.winfo_toplevel())
-        dialog.geometry("450x360")
         panel = ttk.Frame(dialog, padding=12)
         panel.pack(fill="both", expand=True)
         tree = ttk.Treeview(panel, columns=("id",), show="tree headings", height=10)
@@ -317,6 +319,7 @@ class ProductsTab(ttk.Frame):
             ttk.Button(buttons, text=label, command=action).pack(side="left", padx=(0, 5))
         ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="right")
         refresh_categories()
+        size_popup(dialog, self, 720, 560, min_width=620, min_height=460)
 
 
 class InventoryTab(ttk.Frame):
@@ -411,6 +414,7 @@ class InventoryTab(ttk.Frame):
         buttons.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left")
         ttk.Button(buttons, text="Save", command=save).pack(side="right")
+        size_popup(dialog, self, 660, 500, min_width=560, min_height=440)
 
     def adjust(self) -> None:
         item = self._selected()
@@ -440,7 +444,6 @@ class InventoryTab(ttk.Frame):
         dialog = tk.Toplevel(self)
         dialog.title("Configure Product Recipe")
         dialog.transient(self.winfo_toplevel())
-        dialog.geometry("520x540")
         panel = ttk.Frame(dialog, padding=14)
         panel.pack(fill="both", expand=True)
         product_names = [row["product_name"] for row in products]
@@ -490,6 +493,7 @@ class InventoryTab(ttk.Frame):
         buttons.pack(fill="x", pady=(10, 0))
         ttk.Button(buttons, text="Save Recipe", command=save_recipe).pack(side="right")
         ttk.Button(buttons, text="Close", command=dialog.destroy).pack(side="left")
+        size_popup(dialog, self, 820, 720, min_width=680, min_height=560)
 
 
 class StaffTab(ttk.Frame):
@@ -581,6 +585,7 @@ class StaffTab(ttk.Frame):
         buttons.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left")
         ttk.Button(buttons, text="Save", command=save).pack(side="right")
+        size_popup(dialog, self, 660, 520, min_width=560, min_height=440)
 
     def deactivate(self) -> None:
         user = self._selected()
@@ -597,19 +602,100 @@ class StaffTab(ttk.Frame):
                 show_error(exc, "Could not deactivate account")
 
 
+class BrandingTab(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=24)
+        ttk.Label(self, text="Restaurant Branding", style="MenuTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            self,
+            text="Customize the name, tagline, and contact details shown across the app and receipts.",
+            wraplength=700,
+        ).pack(anchor="w", pady=(8, 16))
+        form = ttk.Frame(self)
+        form.pack(anchor="w", fill="x")
+        self.variables = {
+            "restaurant_name": tk.StringVar(),
+            "tagline": tk.StringVar(),
+            "branch": tk.StringVar(),
+            "address": tk.StringVar(),
+            "contact": tk.StringVar(),
+        }
+        fields = (
+            ("Restaurant / app name", "restaurant_name"),
+            ("Tagline", "tagline"),
+            ("Branch name", "branch"),
+            ("Address", "address"),
+            ("Contact number", "contact"),
+        )
+        for row, (label, key) in enumerate(fields):
+            ttk.Label(form, text=label).grid(row=row * 2, column=0, sticky="w", pady=(3, 0))
+            ttk.Entry(form, textvariable=self.variables[key], width=60).grid(
+                row=row * 2 + 1, column=0, sticky="ew", pady=(3, 8)
+            )
+        form.columnconfigure(0, weight=1)
+        self.preview_var = tk.StringVar()
+        ttk.Label(self, textvariable=self.preview_var, style="MetricValue.TLabel").pack(anchor="w", pady=(4, 14))
+        self.variables["restaurant_name"].trace_add("write", self._update_preview)
+        self.variables["tagline"].trace_add("write", self._update_preview)
+        ttk.Button(self, text="Save Branding", command=self.save).pack(anchor="w")
+        self._load_settings()
+
+    def _load_settings(self) -> None:
+        try:
+            settings = settings_model.get_branding_settings()
+            for key, variable in self.variables.items():
+                variable.set(settings[key])
+            self._update_preview()
+        except Exception as exc:
+            show_error(exc, "Could not load branding settings")
+
+    def _update_preview(self, *_args) -> None:
+        name = self.variables["restaurant_name"].get().strip() or "Your Restaurant Name"
+        tagline = self.variables["tagline"].get().strip()
+        self.preview_var.set(f"Preview: {name}" + (f"  ·  {tagline}" if tagline else ""))
+
+    def save(self) -> None:
+        try:
+            settings = settings_model.save_branding_settings(
+                *(self.variables[key].get() for key in (
+                    "restaurant_name", "tagline", "branch", "address", "contact"
+                ))
+            )
+            root = self.winfo_toplevel()
+            if hasattr(root, "set_branding_settings"):
+                root.set_branding_settings(settings)
+            messagebox.showinfo("Branding saved", "Brand details were updated across the app.", parent=self)
+        except Exception as exc:
+            show_error(exc, "Could not save branding settings")
+
+
 class ReportsTab(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent, padding=10)
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x", pady=(0, 8))
-        ttk.Label(toolbar, text="Report period").pack(side="left")
+        ttk.Label(toolbar, text="Report period").grid(row=0, column=0, sticky="w")
         self.period_var = tk.StringVar(value="Daily")
-        period = ttk.Combobox(toolbar, textvariable=self.period_var,
-                              values=("Daily", "Weekly", "Monthly"), state="readonly", width=12)
-        period.pack(side="left", padx=8)
-        period.bind("<<ComboboxSelected>>", lambda _event: self.refresh())
-        ttk.Button(toolbar, text="Generate Report", command=self.refresh).pack(side="left")
-        self.summary_var = tk.StringVar(value="Select a period to view sales.")
+        self.period_box = ttk.Combobox(
+            toolbar, textvariable=self.period_var,
+            values=("Daily", "Weekly", "Monthly", "Custom Range"), state="readonly", width=14,
+        )
+        self.period_box.grid(row=0, column=1, padx=8, sticky="w")
+        self.period_box.bind("<<ComboboxSelected>>", self._period_changed)
+        ttk.Label(toolbar, text="From (YYYY-MM-DD)").grid(row=0, column=2, padx=(10, 3), sticky="e")
+        self.start_var = tk.StringVar(value=date.today().replace(day=1).isoformat())
+        self.start_entry = ttk.Entry(toolbar, textvariable=self.start_var, width=12)
+        self.start_entry.grid(row=0, column=3, padx=(0, 6))
+        ttk.Label(toolbar, text="To").grid(row=0, column=4, padx=(4, 3))
+        self.end_var = tk.StringVar(value=date.today().isoformat())
+        self.end_entry = ttk.Entry(toolbar, textvariable=self.end_var, width=12)
+        self.end_entry.grid(row=0, column=5, padx=(0, 8))
+        self.start_entry.configure(state="disabled")
+        self.end_entry.configure(state="disabled")
+        ttk.Button(toolbar, text="Generate", command=self.refresh).grid(row=0, column=6, padx=3)
+        ttk.Button(toolbar, text="Export CSV", command=self.export_csv).grid(row=0, column=7, padx=3)
+        ttk.Button(toolbar, text="Save Print PDF", command=self.export_pdf).grid(row=0, column=8, padx=3)
+        self.summary_var = tk.StringVar(value="Select a period and generate a report.")
         ttk.Label(self, textvariable=self.summary_var, font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 8))
         self.content = ttk.Frame(self)
         self.content.pack(fill="both", expand=True)
@@ -618,35 +704,96 @@ class ReportsTab(ttk.Frame):
         self.analytics = tk.Text(self.content, width=45, wrap="word", font=("Segoe UI", 10), padx=10, pady=8)
         self.analytics.pack(side="right", fill="both", expand=True)
         self._chart_canvas = None
+        self._report_data: dict | None = None
         self.refresh()
+
+    def _period_changed(self, _event=None) -> None:
+        custom = self.period_var.get() == "Custom Range"
+        state = "normal" if custom else "disabled"
+        self.start_entry.configure(state=state)
+        self.end_entry.configure(state=state)
+        if not custom:
+            self.refresh()
 
     def refresh(self) -> None:
         try:
-            data = report_model.sales_summary(self.period_var.get())
+            period = self.period_var.get()
+            if period == "Custom Range":
+                data = report_model.sales_summary(period, start_date=self.start_var.get(), end_date=self.end_var.get())
+            else:
+                data = report_model.sales_summary(period)
+            self._report_data = data
             self.summary_var.set(
-                f"{self.period_var.get()} Sales: {php(data['sales'])}    "
-                f"Paid Transactions: {data['orders']}"
+                f"{data['start_date']} to {data['end_date']}  |  "
+                f"Sales: {php(data['sales'])}  |  Paid Transactions: {data['orders']}"
             )
             self._render_analytics(data)
             self._render_chart(data.get("trend", []), data.get("order_distribution", []))
         except Exception as exc:
+            self._report_data = None
             show_error(exc, "Could not generate sales report")
+
+    def _require_report(self) -> dict | None:
+        if self._report_data is None:
+            messagebox.showinfo("Generate a report", "Generate a valid sales report before exporting.", parent=self)
+        return self._report_data
+
+    def export_csv(self) -> None:
+        data = self._require_report()
+        if data is None:
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Export Sales Report", initialfile="sales_report.csv",
+            defaultextension=".csv", filetypes=(("CSV spreadsheet", "*.csv"),),
+        )
+        if not path:
+            return
+        try:
+            saved = report_model.save_sales_report_csv(data, path)
+            messagebox.showinfo("Report exported", f"CSV report saved to:\n{saved}", parent=self)
+        except Exception as exc:
+            show_error(exc, "Could not export CSV report")
+
+    def export_pdf(self) -> None:
+        data = self._require_report()
+        if data is None:
+            return
+        path = filedialog.asksaveasfilename(
+            parent=self, title="Save Print-Ready Sales Report", initialfile="sales_report.pdf",
+            defaultextension=".pdf", filetypes=(("PDF document", "*.pdf"),),
+        )
+        if not path:
+            return
+        try:
+            root = self.winfo_toplevel()
+            restaurant = getattr(root, "restaurant_name", "BITEBYTE")
+            saved = report_model.save_sales_report_pdf(
+                data,
+                path,
+                restaurant,
+                getattr(root, "brand_tagline", "Crave It. Click It. Bite It."),
+                getattr(root, "restaurant_branch", ""),
+                getattr(root, "restaurant_address", ""),
+                getattr(root, "restaurant_contact", ""),
+            )
+            messagebox.showinfo("Report saved", f"Print-ready PDF saved to:\n{saved}", parent=self)
+        except Exception as exc:
+            show_error(exc, "Could not save PDF report")
 
     def _render_analytics(self, data: dict) -> None:
         self.analytics.configure(state="normal")
         self.analytics.delete("1.0", "end")
+        self.analytics.insert("end", "DAILY BREAKDOWN\n")
+        for item in data.get("trend", []):
+            self.analytics.insert("end", f"• {item['sale_date']}: {php(item['sales'])} ({item['orders']} paid)\n")
         products = data.get("products", [])
         if products:
-            self.analytics.insert("end", "BEST-SELLING DISHES\n")
+            self.analytics.insert("end", "\nBEST-SELLING DISHES\n")
             for item in products[:5]:
-                self.analytics.insert(
-                    "end", f"• {item['product_name']} — {item['units_sold']} sold, {php(item['revenue'])}\n"
-                )
+                self.analytics.insert("end", f"• {item['product_name']} — {item['units_sold']} sold, {php(item['revenue'])}\n")
             self.analytics.insert("end", "\nLEAST-SELLING DISHES\n")
             for item in sorted(products, key=lambda row: (row["units_sold"], row["product_name"]))[:5]:
                 self.analytics.insert("end", f"• {item['product_name']} — {item['units_sold']} sold\n")
-        else:
-            self.analytics.insert("end", "No paid sales in this period yet.\n")
         self.analytics.insert("end", "\nSALES BY CATEGORY\n")
         for item in data.get("categories", []):
             self.analytics.insert("end", f"• {item['category_name']}: {php(item['revenue'])}\n")
@@ -670,10 +817,8 @@ class ReportsTab(ttk.Frame):
         labels = [str(item["sale_date"]) for item in trend]
         values = [float(item["sales"]) for item in trend]
         if labels:
-            axes.plot(
-                labels, values, marker="o", markerfacecolor="#ffc107",
-                markeredgecolor="#a71920", linewidth=2.5, color="#d32f2f",
-            )
+            axes.plot(labels, values, marker="o", markerfacecolor="#ffc107",
+                      markeredgecolor="#a71920", linewidth=2.5, color="#d32f2f")
             axes.set_title(f"{self.period_var.get()} Sales Trend (PHP)")
             axes.set_ylabel("PHP")
             axes.tick_params(axis="x", rotation=35)
@@ -687,11 +832,8 @@ class ReportsTab(ttk.Frame):
                 "Ready": "#2e7d32", "Completed": "#78909c", "Cancelled": "#e53935",
             }
             labels = [row["order_status"] for row in distribution]
-            order_axes.bar(
-                labels,
-                [int(row["orders"]) for row in distribution],
-                color=[status_colors.get(label, "#c62828") for label in labels],
-            )
+            order_axes.bar(labels, [int(row["orders"]) for row in distribution],
+                           color=[status_colors.get(label, "#c62828") for label in labels])
             order_axes.set_title("Order Distribution")
             order_axes.set_ylabel("Orders")
             order_axes.tick_params(axis="x", rotation=35)

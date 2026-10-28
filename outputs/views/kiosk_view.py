@@ -10,8 +10,260 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from models import order_model, product_model
-from views.common import php, show_error
-from views.theme import PAGE
+from views.common import enable_mousewheel_scrolling, php, show_error, size_popup
+from views.theme import PAGE, RED
+
+
+def _priced_extras(options: tuple[tuple[str, int], ...]) -> dict[str, tuple[str, int]]:
+    return {f"{name} (+{php(price)})": (name, price) for name, price in options}
+
+
+def _extras_for_product(product: dict) -> dict[str, tuple[str, int]]:
+    """Return add-ons that make sense for this menu category and product."""
+    category = (product.get("category_name") or "").casefold()
+    name = (product.get("product_name") or "").casefold()
+
+    if category == "burgers & steaks":
+        if "portobello" in name or "veggie" in name:
+            options = (
+                ("Extra veggie patty", 45),
+                ("Extra cheese", 30),
+                ("Avocado", 25),
+                ("Grilled mushrooms", 25),
+            )
+        elif "burger" in name:
+            options = (
+                ("Extra patty", 60),
+                ("Extra cheese", 30),
+                ("Bacon", 45),
+                ("Add egg", 20),
+            )
+        else:
+            options = (
+                ("Extra steak portion", 120),
+                ("Garlic butter", 25),
+                ("Sauteed mushrooms", 35),
+                ("Extra vegetables", 25),
+            )
+    elif category == "american classics":
+        if "ribs" in name:
+            options = (
+                ("Extra ribs", 100),
+                ("Extra barbecue sauce", 20),
+                ("Add fries", 30),
+                ("Coleslaw", 25),
+            )
+        elif "wing" in name:
+            options = (
+                ("Extra wing", 35),
+                ("Extra Buffalo sauce", 15),
+                ("Ranch dip", 20),
+                ("Add fries", 30),
+            )
+        elif "pancake" in name:
+            options = (
+                ("Extra pancake", 35),
+                ("Maple syrup", 15),
+                ("Fresh berries", 25),
+                ("Bacon", 45),
+            )
+        elif "cookie" in name:
+            options = (
+                ("Extra cookie", 35),
+                ("Add vanilla ice cream", 35),
+                ("Chocolate drizzle", 15),
+                ("Walnuts", 20),
+            )
+        elif "hot dog" in name:
+            options = (
+                ("Extra sausage", 45),
+                ("Cheese sauce", 20),
+                ("Chili topping", 25),
+                ("Sauerkraut", 15),
+            )
+        elif "macaroni" in name:
+            options = (
+                ("Extra cheese", 25),
+                ("Add bacon", 45),
+                ("Add chicken", 55),
+                ("Breadcrumb topping", 15),
+            )
+        elif "chowder" in name:
+            options = (
+                ("Extra chowder serving", 60),
+                ("Extra clams", 45),
+                ("Oyster crackers", 10),
+                ("Bacon bits", 25),
+            )
+        elif "chicken" in name:
+            options = (
+                ("Extra chicken piece", 45),
+                ("Extra gravy", 15),
+                ("Add biscuit", 25),
+                ("Add side", 30),
+            )
+        else:
+            options = (
+                ("Extra serving", 30),
+                ("Extra sauce", 15),
+            )
+    elif category == "chicken & tacos":
+        if "taco" in name or "quesadilla" in name:
+            options = (
+                ("Extra meat filling", 55),
+                ("Extra cheese", 25),
+                ("Salsa", 15),
+                ("Guacamole", 30),
+            )
+        elif "wing" in name:
+            options = (
+                ("Extra chicken piece", 45),
+                ("Extra wing sauce", 15),
+                ("Dipping sauce", 15),
+                ("Add fries", 30),
+            )
+        else:
+            options = (
+                ("Extra chicken piece", 45),
+                ("Extra gravy or sauce", 15),
+                ("Add rice", 25),
+                ("Spicy seasoning", 10),
+            )
+    elif category == "pizza & pasta":
+        if "pizza" in name:
+            options = (
+                ("Extra cheese", 35),
+                ("Extra toppings", 40),
+                ("Add chicken", 55),
+                ("Extra pizza sauce", 15),
+            )
+        else:
+            options = (
+                ("Extra pasta", 40),
+                ("Add chicken", 55),
+                ("Extra parmesan", 25),
+                ("Extra pasta sauce", 20),
+            )
+    elif category == "asian classics":
+        if "sushi" in name or "roll" in name:
+            options = (
+                ("Extra sushi roll", 65),
+                ("Extra fish topping", 55),
+                ("Avocado", 25),
+                ("Extra soy sauce", 10),
+            )
+        elif any(word in name for word in ("ramen", "pho", "noodle", "pad thai")):
+            options = (
+                ("Extra noodles", 30),
+                ("Extra protein", 55),
+                ("Add egg", 20),
+                ("Extra broth or sauce", 15),
+            )
+        elif "dim sum" in name:
+            options = (
+                ("Extra dumpling", 35),
+                ("Extra dipping sauce", 15),
+                ("Chili oil", 10),
+                ("Add rice", 25),
+            )
+        else:
+            options = (
+                ("Extra protein", 55),
+                ("Add rice", 25),
+                ("Extra vegetables", 20),
+                ("Extra sauce", 15),
+            )
+    elif category == "rice meals":
+        options = (
+            ("Extra rice", 20),
+            ("Extra protein", 55),
+            ("Add egg", 20),
+            ("Extra vegetables", 20),
+            ("Extra sauce", 15),
+        )
+    elif category == "combos":
+        options = (
+            ("Add a side", 30),
+            ("Upgrade drink", 20),
+            ("Add dessert", 35),
+            ("Extra main item", 55),
+        )
+    elif category == "sides, desserts & drinks":
+        if "bubble tea" in name:
+            options = (
+                ("Extra tapioca pearls", 20),
+                ("Add flavor syrup", 15),
+                ("Whipped cream", 20),
+            )
+        elif "coffee" in name:
+            options = (
+                ("Extra espresso shot", 35),
+                ("Whipped cream", 20),
+                ("Add flavor syrup", 15),
+                ("Extra milk", 15),
+            )
+        elif "shake" in name:
+            options = (
+                ("Add ice cream scoop", 35),
+                ("Whipped cream", 20),
+                ("Extra fruit syrup", 15),
+                ("Extra fruit topping", 20),
+            )
+        elif "cola" in name:
+            options = (
+                ("Add ice cream float", 35),
+                ("Add cherry topping", 15),
+                ("Vanilla syrup", 15),
+            )
+        elif "lemonade" in name:
+            options = (
+                ("Extra lemon", 10),
+                ("Add fruit flavor", 15),
+                ("Mint", 10),
+                ("Fruit jelly", 20),
+            )
+        elif "matcha" in name or "latte" in name:
+            options = (
+                ("Extra milk", 15),
+                ("Add boba pearls", 20),
+                ("Vanilla syrup", 15),
+                ("Whipped cream", 20),
+            )
+        elif "tea" in name:
+            options = (
+                ("Extra lemon", 10),
+                ("Add fruit flavor", 15),
+                ("Fruit jelly", 20),
+                ("Add boba pearls", 20),
+            )
+        elif any(word in name for word in ("gelato", "ice cream")):
+            options = (
+                ("Extra scoop", 40),
+                ("Chocolate or caramel topping", 20),
+                ("Whipped cream", 15),
+                ("Waffle cone", 15),
+            )
+        elif any(word in name for word in ("cake", "pie", "brownie", "churros", "tiramisu", "sticky rice")):
+            options = (
+                ("Add ice cream", 35),
+                ("Chocolate or caramel drizzle", 15),
+                ("Whipped cream", 15),
+                ("Extra topping", 20),
+            )
+        else:
+            options = (
+                ("Upgrade portion", 30),
+                ("Cheese sauce", 25),
+                ("Dipping sauce", 15),
+                ("Seasoning", 10),
+            )
+    else:
+        options = (
+            ("Extra portion", 30),
+            ("Extra sauce", 15),
+        )
+
+    return _priced_extras(options)
 
 
 class KioskView(ttk.Frame):
@@ -36,19 +288,89 @@ class KioskView(ttk.Frame):
         panel = ttk.Frame(self, padding=40, style="Welcome.TFrame")
         panel.grid(row=0, column=0, sticky="nsew")
         panel.columnconfigure(0, weight=1)
-        ttk.Label(panel, text="\U0001F354     \U0001F35F     \U0001F355", style="WelcomeFood.TLabel").grid(
-            row=0, column=0, pady=(55, 14)
-        )
-        ttk.Label(panel, text="WORLD FAST FOOD EXPRESS", style="WelcomeBrand.TLabel").grid(
-            row=1, column=0, pady=(0, 10)
-        )
-        ttk.Label(panel, text="Famous favorites, made fresh.", style="WelcomeText.TLabel").grid(
-            row=2, column=0, pady=(0, 28)
-        )
+        brand_name = getattr(self.winfo_toplevel(), "restaurant_name", "BITEBYTE")
+        brand_tagline = getattr(self.winfo_toplevel(), "brand_tagline", "Crave It. Click It. Bite It.")
+        row = 0
+        banner = self._banner_photo()
+        if banner:
+            self._welcome_banner_ref = banner
+            ttk.Label(panel, image=banner, background=RED).grid(
+                row=row, column=0, pady=(8, 12)
+            )
+            row += 1
+            # The banner includes the default BITEBYTE name and tagline. Keep
+            # customized branding visible when the admin changes it.
+            if brand_name != "BITEBYTE" or brand_tagline != "Crave It. Click It. Bite It.":
+                ttk.Label(panel, text=brand_name, style="WelcomeBrand.TLabel").grid(
+                    row=row, column=0, pady=(0, 6)
+                )
+                row += 1
+                ttk.Label(panel, text=brand_tagline, style="WelcomeText.TLabel").grid(
+                    row=row, column=0, pady=(0, 12)
+                )
+                row += 1
+        else:
+            logo = self._brand_logo((560, 360))
+            if logo:
+                self._welcome_logo_ref = logo
+                ttk.Label(panel, image=logo, background=RED).grid(
+                    row=row, column=0, pady=(25, 12)
+                )
+                row += 1
+                if brand_name != "BITEBYTE" or brand_tagline != "Crave It. Click It. Bite It.":
+                    ttk.Label(panel, text=brand_name, style="WelcomeBrand.TLabel").grid(
+                        row=row, column=0, pady=(0, 6)
+                    )
+                    row += 1
+                    ttk.Label(panel, text=brand_tagline, style="WelcomeText.TLabel").grid(
+                        row=row, column=0, pady=(0, 12)
+                    )
+                    row += 1
+            else:
+                ttk.Label(panel, text="\U0001F354     \U0001F35F     \U0001F355", style="WelcomeFood.TLabel").grid(
+                    row=row, column=0, pady=(55, 14)
+                )
+                row += 1
+                ttk.Label(panel, text=brand_name, style="WelcomeBrand.TLabel").grid(
+                    row=row, column=0, pady=(0, 10)
+                )
+                row += 1
+                ttk.Label(panel, text=brand_tagline, style="WelcomeText.TLabel").grid(
+                    row=row, column=0, pady=(0, 28)
+                )
+                row += 1
         ttk.Button(panel, text="TOUCH TO START ORDER", style="Gold.TButton",
                    command=self._choose_order_type).grid(
-            row=3, column=0, ipadx=25, ipady=7
+            row=row, column=0, ipadx=25, ipady=7, pady=(10, 0)
         )
+
+    def _brand_logo(self, size: tuple[int, int]):
+        """Load the bundled kiosk logo at a size that fits the current screen."""
+        try:
+            from PIL import Image, ImageOps, ImageTk
+
+            logo_path = Path(__file__).resolve().parents[1] / "assets" / "bitebyte-burger-click-logo.png"
+            with Image.open(logo_path) as source:
+                image = ImageOps.contain(source.convert("RGB"), size, method=Image.LANCZOS)
+            return ImageTk.PhotoImage(image)
+        except (ImportError, OSError):
+            return None
+
+    def _banner_photo(self):
+        """Load the welcome advertisement while reserving room for the order CTA."""
+        try:
+            from PIL import Image, ImageOps, ImageTk
+
+            banner_path = Path(__file__).resolve().parents[1] / "assets" / "bitebyte-feast-advertisement.png"
+            max_size = (
+                max(320, min(960, self.winfo_screenwidth() - 160)),
+                max(240, min(540, self.winfo_screenheight() - 300)),
+            )
+            with Image.open(banner_path) as source:
+                image = ImageOps.contain(source.convert("RGB"), max_size, method=Image.LANCZOS)
+            return ImageTk.PhotoImage(image)
+        except (ImportError, OSError):
+            return None
 
     def _choose_order_type(self) -> None:
         dialog = tk.Toplevel(self)
@@ -68,6 +390,7 @@ class KioskView(ttk.Frame):
         ttk.Button(box, text="Dine-In", command=lambda: choose("Dine-In")).pack(fill="x", pady=5, ipady=8)
         ttk.Button(box, text="Take-Out", command=lambda: choose("Take-Out")).pack(fill="x", pady=5, ipady=8)
         ttk.Button(box, text="Cancel", command=dialog.destroy).pack(anchor="e", pady=(12, 0))
+        size_popup(dialog, self, 520, 380, min_width=440, min_height=340, resizable=False)
 
     def _build_ordering(self) -> None:
         for child in self.winfo_children():
@@ -79,6 +402,10 @@ class KioskView(ttk.Frame):
 
         top = ttk.Frame(self)
         top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        logo = self._brand_logo((140, 94))
+        if logo:
+            self._ordering_logo_ref = logo
+            ttk.Label(top, image=logo, background=PAGE).pack(side="left", padx=(0, 10))
         ttk.Label(top, text=f"{self.order_type} Order", style="MenuTitle.TLabel").pack(side="left")
         ttk.Button(top, text="Start Over", command=self._confirm_reset).pack(side="right")
         search_row = ttk.Frame(self)
@@ -98,6 +425,7 @@ class KioskView(ttk.Frame):
         category_scroll = ttk.Scrollbar(category_shell, orient="horizontal", command=self.category_canvas.xview)
         category_scroll.grid(row=1, column=0, sticky="ew")
         self.category_canvas.configure(xscrollcommand=category_scroll.set)
+        enable_mousewheel_scrolling(self.category_canvas, axis="x")
         self.category_buttons = ttk.Frame(self.category_canvas)
         self.category_window = self.category_canvas.create_window(
             (0, 0), window=self.category_buttons, anchor="nw"
@@ -107,11 +435,6 @@ class KioskView(ttk.Frame):
                 scrollregion=self.category_canvas.bbox("all")
             )
         )
-        self.category_canvas.bind(
-            "<Shift-MouseWheel>",
-            lambda event: self.category_canvas.xview_scroll(-1 if event.delta > 0 else 1, "units"),
-        )
-
         body = ttk.Panedwindow(self, orient="horizontal")
         body.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
         self.rowconfigure(3, weight=1)
@@ -128,6 +451,7 @@ class KioskView(ttk.Frame):
         )
         self.menu_window = self.menu_canvas.create_window((0, 0), window=self.cards_frame, anchor="nw")
         self.menu_canvas.configure(yscrollcommand=menu_scroll.set)
+        enable_mousewheel_scrolling(self.menu_canvas, axis="y")
         self.menu_canvas.bind("<Configure>", self._resize_menu_content)
         self.menu_canvas.pack(side="left", fill="both", expand=True)
         menu_scroll.pack(side="right", fill="y")
@@ -281,7 +605,6 @@ class KioskView(ttk.Frame):
         dialog.title(f"Customize {product['product_name']}")
         dialog.transient(self.winfo_toplevel())
         dialog.grab_set()
-        dialog.resizable(False, False)
         panel = ttk.Frame(dialog, padding=18)
         panel.pack(fill="both", expand=True)
         ttk.Label(panel, text=product["product_name"], font=("Segoe UI", 15, "bold")).pack(anchor="w")
@@ -289,18 +612,14 @@ class KioskView(ttk.Frame):
         ttk.Label(panel, text="Size").pack(anchor="w", pady=(12, 2))
         ttk.Radiobutton(panel, text="Regular", value="Regular", variable=size_var).pack(anchor="w")
         ttk.Radiobutton(panel, text="Large (+₱60.00)", value="Large", variable=size_var).pack(anchor="w")
-        ttk.Label(panel, text="Extras").pack(anchor="w", pady=(12, 2))
-        extras = {
-            "Extra cheese (+₱30.00)": ("Extra cheese", 30),
-            "Extra gravy (+₱20.00)": ("Extra gravy", 20),
-            "Bacon (+₱45.00)": ("Bacon", 45),
-        }
+        ttk.Label(panel, text="Food-specific extras & add-ons").pack(anchor="w", pady=(12, 2))
+        extras = _extras_for_product(product)
         extra_vars = {label: tk.BooleanVar(value=False) for label in extras}
         for label, variable in extra_vars.items():
             ttk.Checkbutton(panel, text=label, variable=variable).pack(anchor="w")
         ttk.Label(panel, text="Remove ingredients or add a preference").pack(anchor="w", pady=(12, 2))
         exclusions = ttk.Entry(panel, width=42)
-        exclusions.insert(0, "e.g. no onions, extra spicy")
+        exclusions.insert(0, "e.g. no onions, less spicy, less ice, sauce on the side")
         exclusions.pack(fill="x")
         ttk.Label(panel, text="Special instructions").pack(anchor="w", pady=(10, 2))
         instructions = ttk.Entry(panel, width=42)
@@ -336,6 +655,7 @@ class KioskView(ttk.Frame):
         buttons.pack(fill="x", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left")
         ttk.Button(buttons, text="Add to Cart", command=add_item).pack(side="right")
+        size_popup(dialog, self, 680, 700, min_width=600, min_height=600)
 
     def _line_total(self, line: dict):
         return (line["unit_price"] + line["unit_adjustment"]) * line["quantity"]
@@ -403,8 +723,11 @@ class KioskView(ttk.Frame):
         dialog.grab_set()
         panel = ttk.Frame(dialog, padding=22)
         panel.pack(fill="both", expand=True)
-        ttk.Label(panel, text="WORLD FAST FOOD EXPRESS", font=("Consolas", 15, "bold")).pack()
-        ttk.Label(panel, text="DIGITAL ORDER SLIP", font=("Consolas", 11)).pack(pady=(2, 10))
+        brand_name = getattr(self.winfo_toplevel(), "restaurant_name", "BITEBYTE")
+        brand_tagline = getattr(self.winfo_toplevel(), "brand_tagline", "Crave It. Click It. Bite It.")
+        ttk.Label(panel, text=brand_name, font=("Consolas", 15, "bold")).pack()
+        ttk.Label(panel, text=brand_tagline, font=("Consolas", 10)).pack(pady=(2, 5))
+        ttk.Label(panel, text="DIGITAL ORDER SLIP", font=("Consolas", 11)).pack(pady=(0, 10))
         ttk.Separator(panel).pack(fill="x", pady=5)
         ttk.Label(panel, text=f"Order Code: {order['order_code']}", font=("Consolas", 14, "bold")).pack(anchor="w")
         ttk.Label(panel, text=f"Time: {datetime.now():%Y-%m-%d %H:%M:%S}").pack(anchor="w")
@@ -428,7 +751,15 @@ class KioskView(ttk.Frame):
         buttons.pack(fill="x", pady=(16, 0))
         ttk.Button(buttons, text="Cancel Order", command=cancel_order).pack(side="left")
         ttk.Button(buttons, text="Done", command=lambda: (dialog.destroy(), self._build_welcome())).pack(side="right")
+        size_popup(dialog, self, 620, 640, min_width=540, min_height=560)
 
     def _confirm_reset(self) -> None:
         if not self.cart or messagebox.askyesno("Start over", "Clear your cart and start over?", parent=self):
             self._build_welcome()
+
+
+
+
+
+
+

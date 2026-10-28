@@ -12,13 +12,26 @@ from views.kiosk_view import KioskView
 from views.kitchen_view import KitchenView
 from views.login_view import LoginView
 from database import ensure_runtime_schema
+from config import (
+    RESTAURANT_ADDRESS,
+    RESTAURANT_BRANCH,
+    RESTAURANT_CONTACT,
+    RESTAURANT_NAME,
+    RESTAURANT_TAGLINE,
+)
+from models import settings_model
 from views.theme import configure_theme
 
 
 class FastFoodApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("World Fast Food Express")
+        self.restaurant_name = RESTAURANT_NAME
+        self.brand_tagline = RESTAURANT_TAGLINE
+        self.restaurant_branch = RESTAURANT_BRANCH
+        self.restaurant_address = RESTAURANT_ADDRESS
+        self.restaurant_contact = RESTAURANT_CONTACT
+        self.title(self.restaurant_name)
         self.geometry("1280x820")
         self.minsize(980, 640)
         self.current_user: dict | None = None
@@ -29,7 +42,7 @@ class FastFoodApp(tk.Tk):
 
         self.header = ttk.Frame(self, style="Header.TFrame", padding=(14, 8))
         self.header.pack(fill="x")
-        self.title_label = ttk.Label(self.header, text="WORLD FAST FOOD EXPRESS", style="HeaderTitle.TLabel")
+        self.title_label = ttk.Label(self.header, text=self.restaurant_name, style="HeaderTitle.TLabel")
         self.title_label.pack(side="left")
         self.clock_var = tk.StringVar()
         ttk.Label(self.header, textvariable=self.clock_var, style="Clock.TLabel").pack(side="left", padx=24)
@@ -49,6 +62,7 @@ class FastFoodApp(tk.Tk):
         """Bring an existing installation up to the schema expected by this app."""
         try:
             ensure_runtime_schema()
+            self.set_branding_settings(settings_model.get_branding_settings())
         except Exception as exc:
             self._database_ready = False
             self._database_error = str(exc)
@@ -57,6 +71,21 @@ class FastFoodApp(tk.Tk):
         self._database_ready = True
         self._database_error = ""
         self.show_kiosk()
+
+    def set_restaurant_name(self, name: str) -> None:
+        """Update the visible brand on the main window and future screens."""
+        self.restaurant_name = name
+        self.title(name)
+        if getattr(self, "title_label", None) and self.title_label.winfo_exists():
+            self.title_label.configure(text=name)
+
+    def set_branding_settings(self, settings: dict[str, str]) -> None:
+        self.restaurant_name = settings["restaurant_name"]
+        self.brand_tagline = settings["tagline"]
+        self.restaurant_branch = settings["branch"]
+        self.restaurant_address = settings["address"]
+        self.restaurant_contact = settings["contact"]
+        self.set_restaurant_name(self.restaurant_name)
 
     def show_database_setup(self) -> None:
         """Show a recoverable setup page instead of opening DB-backed screens."""
