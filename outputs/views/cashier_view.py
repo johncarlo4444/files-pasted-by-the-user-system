@@ -81,7 +81,10 @@ class CashierView(ttk.Frame):
         method.bind("<<ComboboxSelected>>", lambda _event: self._set_due_amount())
         ttk.Label(payment, text="Amount Tendered (PHP)").grid(row=0, column=2, sticky="w")
         self.amount_var = tk.StringVar()
-        ttk.Entry(payment, textvariable=self.amount_var, width=18).grid(row=0, column=3, padx=8, sticky="w")
+        self.amount_var.trace_add("write", lambda *_args: self._update_change_display())
+        ttk.Entry(payment, textvariable=self.amount_var, width=18, font=("Segoe UI", 14)).grid(
+            row=0, column=3, padx=8, sticky="w"
+        )
         self.total_var = tk.StringVar(value="Total: ₱0.00")
         ttk.Label(payment, textvariable=self.total_var, style="MetricValue.TLabel").grid(
             row=1, column=0, columnspan=2, sticky="w", pady=(10, 0)
@@ -89,6 +92,10 @@ class CashierView(ttk.Frame):
         self.pay_button = ttk.Button(payment, text="Confirm Payment & Generate Receipt", command=self.pay)
         self.pay_button.grid(
             row=1, column=2, columnspan=2, sticky="e", pady=(10, 0)
+        )
+        self.change_var = tk.StringVar(value="Change: —")
+        ttk.Label(payment, textvariable=self.change_var, style="ChangeValue.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(8, 0)
         )
         for col in range(4):
             payment.columnconfigure(col, weight=1)
@@ -184,6 +191,7 @@ class CashierView(ttk.Frame):
             self.summary_var.set("Enter the order code to verify the customer order.")
             self.total_var.set("Total: ₱0.00")
             self.amount_var.set("")
+            self.change_var.set("Change: —")
             self._update_action_states()
             return
         order = self.order
@@ -198,7 +206,27 @@ class CashierView(ttk.Frame):
                               values=(item["quantity"], notes, php(item["subtotal"])))
         self.total_var.set(f"Total: {php(order['total_amount'])}")
         self.amount_var.set(f"{Decimal(str(order['total_amount'])):.2f}")
+        self._update_change_display()
         self._update_action_states()
+
+    def _update_change_display(self) -> None:
+        if not getattr(self, "change_var", None):
+            return
+        if not self.order:
+            self.change_var.set("Change: —")
+            return
+        try:
+            tendered = Decimal(self.amount_var.get().strip())
+        except (InvalidOperation, AttributeError):
+            self.change_var.set("Change: enter tendered amount")
+            return
+        amount_due = Decimal(str(self.order["total_amount"]))
+        if tendered < amount_due:
+            self.change_var.set(f"Amount remaining: {php(amount_due - tendered)}")
+        elif self.method_var.get() == "Cash":
+            self.change_var.set(f"Change: {php(tendered - amount_due)}")
+        else:
+            self.change_var.set("Change: ₱0.00")
 
     def change_quantity(self) -> None:
         if not self._is_editable_order():

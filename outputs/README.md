@@ -30,6 +30,10 @@ Offline Tkinter ordering and management app using a local MySQL server.
    python database.py
    ```
 
+   If a previous setup attempt stopped with a missing `users` or `payments`
+   table, use the updated `database.py` and run this command again. The setup
+   creates any missing tables and then seeds the starter data.
+
    The starter staff login is `admin` / `admin123`. Change that password from
    **Admin → Staff Users** after signing in.
 If `admin` / `admin123` does not work on an existing database, reset the

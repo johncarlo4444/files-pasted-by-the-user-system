@@ -90,12 +90,29 @@ def configure_theme(root: tk.Misc) -> None:
                     font=("Segoe UI", 15))
     style.configure("WelcomeFood.TLabel", background=RED, foreground=GOLD,
                     font=("Segoe UI Emoji", 46))
+    style.configure("LoginBackdrop.TFrame", background=RED)
+    style.configure("LoginCard.TFrame", background="white", relief="solid", borderwidth=1,
+                    bordercolor=BORDER)
+    style.configure("LoginCard.TLabel", background="white", foreground=TEXT)
+    style.configure("LoginTitle.TLabel", background="white", foreground=DARK_RED,
+                    font=("Segoe UI", 20, "bold"))
+    style.configure("Login.TRadiobutton", background="white", foreground=TEXT, padding=(4, 6))
     style.configure("MenuTitle.TLabel", background=PAGE, foreground=DARK_RED,
                     font=("Segoe UI", 18, "bold"))
     style.configure("MenuCard.TFrame", background=CARD, bordercolor=BORDER, relief="solid", borderwidth=1)
     style.configure("MenuCard.TLabel", background=CARD, foreground=TEXT)
     style.configure("MenuCardCategory.TLabel", background=CARD, foreground=MUTED)
     style.configure("MenuCardPrice.TLabel", background=CARD, foreground=DARK_RED, font=("Segoe UI", 12, "bold"))
+    style.configure("OutOfStock.TFrame", background="#eeeceb", bordercolor="#c9c4c1",
+                    relief="solid", borderwidth=1)
+    style.configure("OutOfStock.TLabel", background="#eeeceb", foreground="#827c79")
+    style.configure("OutOfStockCategory.TLabel", background="#eeeceb", foreground="#928b88")
+    style.configure("OutOfStockPrice.TLabel", background="#eeeceb", foreground="#827c79",
+                    font=("Segoe UI", 12, "bold"))
+    style.configure("OutOfStockBadge.TLabel", background="#e53935", foreground="white",
+                    padding=(8, 4), font=("Segoe UI", 9, "bold"))
+    style.configure("ChangeValue.TLabel", background=PAGE, foreground=DARK_RED,
+                    font=("Segoe UI", 14, "bold"))
     style.configure("KdsColumn.TFrame", background="#eee7e3", relief="solid", borderwidth=1)
     style.configure("KdsEmpty.TLabel", background="#eee7e3", foreground=MUTED)
     style.configure("KdsCard.TFrame", background=CARD, relief="solid", borderwidth=1)

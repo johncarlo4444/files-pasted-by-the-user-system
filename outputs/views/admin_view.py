@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import shutil
 import tkinter as tk
 import uuid
@@ -686,15 +687,25 @@ class ReportsTab(ttk.Frame):
         self.start_var = tk.StringVar(value=date.today().replace(day=1).isoformat())
         self.start_entry = ttk.Entry(toolbar, textvariable=self.start_var, width=12)
         self.start_entry.grid(row=0, column=3, padx=(0, 6))
-        ttk.Label(toolbar, text="To").grid(row=0, column=4, padx=(4, 3))
+        self.start_calendar_button = ttk.Button(
+            toolbar, text="...", width=3, command=lambda: self._open_date_picker(self.start_var)
+        )
+        self.start_calendar_button.grid(row=0, column=4, padx=(0, 8))
+        ttk.Label(toolbar, text="To").grid(row=0, column=5, padx=(4, 3))
         self.end_var = tk.StringVar(value=date.today().isoformat())
         self.end_entry = ttk.Entry(toolbar, textvariable=self.end_var, width=12)
-        self.end_entry.grid(row=0, column=5, padx=(0, 8))
+        self.end_entry.grid(row=0, column=6, padx=(0, 6))
+        self.end_calendar_button = ttk.Button(
+            toolbar, text="...", width=3, command=lambda: self._open_date_picker(self.end_var)
+        )
+        self.end_calendar_button.grid(row=0, column=7, padx=(0, 8))
         self.start_entry.configure(state="disabled")
         self.end_entry.configure(state="disabled")
-        ttk.Button(toolbar, text="Generate", command=self.refresh).grid(row=0, column=6, padx=3)
-        ttk.Button(toolbar, text="Export CSV", command=self.export_csv).grid(row=0, column=7, padx=3)
-        ttk.Button(toolbar, text="Save Print PDF", command=self.export_pdf).grid(row=0, column=8, padx=3)
+        self.start_calendar_button.configure(state="disabled")
+        self.end_calendar_button.configure(state="disabled")
+        ttk.Button(toolbar, text="Generate", command=self.refresh).grid(row=0, column=8, padx=3)
+        ttk.Button(toolbar, text="Export CSV", command=self.export_csv).grid(row=0, column=9, padx=3)
+        ttk.Button(toolbar, text="Save Print PDF", command=self.export_pdf).grid(row=0, column=10, padx=3)
         self.summary_var = tk.StringVar(value="Select a period and generate a report.")
         ttk.Label(self, textvariable=self.summary_var, font=("Segoe UI", 13, "bold")).pack(anchor="w", pady=(0, 8))
         self.content = ttk.Frame(self)
@@ -712,8 +723,75 @@ class ReportsTab(ttk.Frame):
         state = "normal" if custom else "disabled"
         self.start_entry.configure(state=state)
         self.end_entry.configure(state=state)
+        self.start_calendar_button.configure(state=state)
+        self.end_calendar_button.configure(state=state)
         if not custom:
             self.refresh()
+
+    def _open_date_picker(self, target: tk.StringVar) -> None:
+        try:
+            selected = date.fromisoformat(target.get().strip())
+        except ValueError:
+            selected = date.today()
+        year, month = selected.year, selected.month
+        dialog = tk.Toplevel(self)
+        dialog.title("Choose a date")
+        dialog.transient(self.winfo_toplevel())
+        dialog.grab_set()
+        panel = ttk.Frame(dialog, padding=12)
+        panel.pack(fill="both", expand=True)
+        header = ttk.Frame(panel)
+        header.pack(fill="x", pady=(0, 8))
+        calendar_grid = ttk.Frame(panel)
+        calendar_grid.pack()
+
+        def render_month() -> None:
+            nonlocal year, month
+            for child in header.winfo_children():
+                child.destroy()
+            for child in calendar_grid.winfo_children():
+                child.destroy()
+
+            ttk.Button(header, text="‹", width=3, command=previous_month).pack(side="left")
+            ttk.Label(header, text=f"{calendar.month_name[month]} {year}",
+                      font=("Segoe UI", 11, "bold")).pack(side="left", expand=True)
+            ttk.Button(header, text="›", width=3, command=next_month).pack(side="right")
+            for column, day_name in enumerate(("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")):
+                ttk.Label(calendar_grid, text=day_name, width=4, anchor="center").grid(
+                    row=0, column=column, padx=1, pady=2
+                )
+            for row, week in enumerate(calendar.monthcalendar(year, month), start=1):
+                for column, day_number in enumerate(week):
+                    if day_number:
+                        ttk.Button(
+                            calendar_grid, text=str(day_number), width=4,
+                            command=lambda day=day_number: choose_day(day),
+                        ).grid(row=row, column=column, padx=1, pady=1)
+
+        def change_month(delta: int) -> None:
+            nonlocal year, month
+            month += delta
+            if month < 1:
+                month, year = 12, year - 1
+            elif month > 12:
+                month, year = 1, year + 1
+            render_month()
+
+        def previous_month() -> None:
+            change_month(-1)
+
+        def next_month() -> None:
+            change_month(1)
+
+        def choose_day(day_number: int) -> None:
+            target.set(date(year, month, day_number).isoformat())
+            dialog.destroy()
+
+        ttk.Button(panel, text="Today", command=lambda: (target.set(date.today().isoformat()), dialog.destroy())).pack(
+            anchor="e", pady=(8, 0)
+        )
+        render_month()
+        size_popup(dialog, self, 340, 330, min_width=320, min_height=300, resizable=False)
 
     def refresh(self) -> None:
         try:

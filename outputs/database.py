@@ -57,8 +57,14 @@ def _statements_from_sql(script: str) -> list[str]:
     The schema contains no stored routines or semicolons inside string values,
     so splitting on statement terminators is sufficient and works across
     mysql-connector-python versions (including versions without multi=True).
+    Strip standalone SQL comments first so they cannot hide the statement type
+    from the setup/seed classifier in ``initialize_database``.
     """
-    return [statement.strip() for statement in script.split(";") if statement.strip()]
+    uncommented = "\n".join(
+        line for line in script.splitlines()
+        if not line.lstrip().startswith("--")
+    )
+    return [statement.strip() for statement in uncommented.split(";") if statement.strip()]
 
 
 def initialize_database(schema_path: str | Path | None = None) -> None:

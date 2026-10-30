@@ -34,6 +34,7 @@ class FastFoodApp(tk.Tk):
         self.title(self.restaurant_name)
         self.geometry("1280x820")
         self.minsize(980, 640)
+        self.state("zoomed")
         self.current_user: dict | None = None
         self._database_ready = False
         self._database_error = ""

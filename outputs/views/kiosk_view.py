@@ -266,6 +266,28 @@ def _extras_for_product(product: dict) -> dict[str, tuple[str, int]]:
     return _priced_extras(options)
 
 
+def _preferences_for_product(product: dict) -> tuple[str, ...]:
+    """Return no-cost preference checkboxes that fit the product being ordered."""
+    category = (product.get("category_name") or "").casefold()
+    name = (product.get("product_name") or "").casefold()
+    if any(word in name for word in (
+        "gelato", "ice cream", "cake", "pie", "brownie", "churros", "cookie",
+        "pancake", "tiramisu", "sticky rice",
+    )):
+        return ("No whipped cream", "No drizzle", "Less sweet")
+    if category == "sides, desserts & drinks" and any(word in name for word in (
+        "tea", "coffee", "cola", "lemonade", "latte", "matcha", "juice", "soda", "shake",
+    )):
+        return ("No ice", "Less ice", "No sugar", "Less sugar")
+    if category == "asian classics":
+        return ("No green onions", "No chili", "Less spicy", "Extra spicy")
+    if category == "pizza & pasta":
+        return ("No olives", "No onions", "Light sauce", "Extra spicy")
+    if category == "burgers & steaks":
+        return ("No onions", "No pickles", "No tomatoes", "No sauce")
+    return ("No onions", "No sauce", "Less spicy", "Extra spicy")
+
+
 class KioskView(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent, padding=12)
@@ -480,7 +502,7 @@ class KioskView(ttk.Frame):
         total_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         ttk.Label(total_row, text="TOTAL", font=("Segoe UI", 11, "bold")).pack(side="left")
         ttk.Label(total_row, textvariable=self.total_var, style="MetricValue.TLabel").pack(side="right")
-        ttk.Button(cart_panel, text="Review & Place Order", command=self._preview_order).grid(
+        ttk.Button(cart_panel, text="PROCEED TO CHECKOUT", command=self._preview_order).grid(
             row=4, column=0, sticky="ew", pady=(10, 0), ipady=4
         )
 
@@ -546,30 +568,37 @@ class KioskView(ttk.Frame):
             self.cards_frame.columnconfigure(column, weight=1, uniform="menu-card")
         for index, product in enumerate(self.products):
             row, column = divmod(index, 3)
-            card = ttk.Frame(self.cards_frame, padding=10, style="MenuCard.TFrame")
+            can_order = bool(product["can_order"])
+            card_style = "MenuCard.TFrame" if can_order else "OutOfStock.TFrame"
+            text_style = "MenuCard.TLabel" if can_order else "OutOfStock.TLabel"
+            category_style = "MenuCardCategory.TLabel" if can_order else "OutOfStockCategory.TLabel"
+            price_style = "MenuCardPrice.TLabel" if can_order else "OutOfStockPrice.TLabel"
+            card = ttk.Frame(self.cards_frame, padding=10, style=card_style)
             card.grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
-            photo = self._product_photo(product.get("image_path"), product["product_name"])
+            photo = self._product_photo(
+                product.get("image_path"), product["product_name"], disabled=not can_order
+            )
             if photo:
-                image_label = ttk.Label(card, image=photo, style="MenuCard.TLabel")
+                image_label = ttk.Label(card, image=photo, style=text_style)
                 image_label.pack(pady=(0, 6))
                 self._photo_refs.append(photo)
             else:
-                ttk.Label(card, text="🍽", font=("Segoe UI Emoji", 26)).pack(pady=(0, 3))
-            ttk.Label(card, text=product["product_name"], style="MenuCard.TLabel",
+                ttk.Label(card, text="🍽", font=("Segoe UI Emoji", 26), style=text_style).pack(pady=(0, 3))
+            if not can_order:
+                ttk.Label(card, text="OUT OF STOCK", style="OutOfStockBadge.TLabel").pack(pady=(0, 4))
+            ttk.Label(card, text=product["product_name"], style=text_style,
                       font=("Segoe UI", 11, "bold"),
                       wraplength=210, justify="center").pack(fill="x")
-            ttk.Label(card, text=product["category_name"], style="MenuCardCategory.TLabel").pack()
-            ttk.Label(card, text=product["description"] or "", style="MenuCard.TLabel", wraplength=210,
+            ttk.Label(card, text=product["category_name"], style=category_style).pack()
+            ttk.Label(card, text=product["description"] or "", style=text_style, wraplength=210,
                       justify="center").pack(fill="x", pady=(4, 2))
-            ttk.Label(card, text=php(product["price"]), style="MenuCardPrice.TLabel").pack(pady=3)
-            if product["can_order"]:
+            ttk.Label(card, text=php(product["price"]), style=price_style).pack(pady=3)
+            if can_order:
                 ttk.Button(card, text="+ Customize & Add", command=lambda p=product: self._customize(p)).pack(
                     fill="x", pady=(3, 0)
                 )
-            else:
-                ttk.Label(card, text="Out of Stock", foreground="#a32020").pack(pady=(3, 0))
 
-    def _product_photo(self, path: str | None, product_name: str):
+    def _product_photo(self, path: str | None, product_name: str, *, disabled: bool = False):
         try:
             from PIL import Image, ImageOps, ImageTk
             app_root = Path(__file__).resolve().parents[1]
@@ -593,6 +622,10 @@ class KioskView(ttk.Frame):
                         image = ImageOps.fit(
                             source.convert("RGB"), (220, 130), method=Image.LANCZOS
                         )
+                        if disabled:
+                            image = ImageOps.colorize(
+                                ImageOps.grayscale(image), black="#8d8987", white="#e8e6e5"
+                            )
                     return ImageTk.PhotoImage(image)
                 except OSError:
                     continue
@@ -617,9 +650,14 @@ class KioskView(ttk.Frame):
         extra_vars = {label: tk.BooleanVar(value=False) for label in extras}
         for label, variable in extra_vars.items():
             ttk.Checkbutton(panel, text=label, variable=variable).pack(anchor="w")
-        ttk.Label(panel, text="Remove ingredients or add a preference").pack(anchor="w", pady=(12, 2))
+        ttk.Label(panel, text="Order preferences").pack(anchor="w", pady=(12, 2))
+        preferences = _preferences_for_product(product)
+        preference_vars = {preference: tk.BooleanVar(value=False) for preference in preferences}
+        for preference, variable in preference_vars.items():
+            ttk.Checkbutton(panel, text=preference, variable=variable).pack(anchor="w")
+        ttk.Label(panel, text="Other ingredient requests").pack(anchor="w", pady=(8, 2))
         exclusions = ttk.Entry(panel, width=42)
-        exclusions.insert(0, "e.g. no onions, less spicy, less ice, sauce on the side")
+        exclusions.insert(0, "e.g. sauce on the side, no mushrooms")
         exclusions.pack(fill="x")
         ttk.Label(panel, text="Special instructions").pack(anchor="w", pady=(10, 2))
         instructions = ttk.Entry(panel, width=42)
@@ -635,6 +673,9 @@ class KioskView(ttk.Frame):
                     name, price = extras[label]
                     adjustment += price
                     chosen.append(name)
+            chosen.extend(
+                preference for preference, variable in preference_vars.items() if variable.get()
+            )
             if exclusions.get().strip() and not exclusions.get().startswith("e.g."):
                 chosen.append(exclusions.get().strip())
             custom = ", ".join(chosen) if chosen else "Regular"
@@ -655,7 +696,7 @@ class KioskView(ttk.Frame):
         buttons.pack(fill="x", pady=(16, 0))
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="left")
         ttk.Button(buttons, text="Add to Cart", command=add_item).pack(side="right")
-        size_popup(dialog, self, 680, 700, min_width=600, min_height=600)
+        size_popup(dialog, self, 720, 760, min_width=620, min_height=620)
 
     def _line_total(self, line: dict):
         return (line["unit_price"] + line["unit_adjustment"]) * line["quantity"]
