@@ -67,3 +67,10 @@ can also place photos there using the product-name filename, for example
 `assets/menu/classic-double-cheeseburger.jpg`; supported formats are PNG, JPG,
 JPEG, and WebP. MySQL must be running locally while the app is in use; orders
 and reports are stored in that local database.
+
+The kiosk welcome screen includes **View Menu** for browsing products before
+choosing Dine-In or Take-Out. The menu offers **Grid** and **List** layouts plus
+Small, Medium, and Large photo sizes. Kiosk background music is bundled at
+`assets/bitebyte-background-music.mp3`; include the `assets/` folder when moving
+the project to another computer. The music controls use Windows audio playback
+and do not add another Python package requirement.

@@ -5,6 +5,8 @@ from __future__ import annotations
 import itertools
 import re
 import tkinter as tk
+import ctypes
+import os
 from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -12,6 +14,69 @@ from tkinter import filedialog, messagebox, simpledialog, ttk
 from models import order_model, product_model
 from views.common import enable_mousewheel_scrolling, php, show_error, size_popup
 from views.theme import PAGE, RED
+
+
+class _BackgroundMusic:
+    """Small Windows MCI wrapper for bundled MP3 playback and volume control."""
+
+    _ALIAS = "bitebyte_kiosk_music"
+
+    def __init__(self, path: Path):
+        if os.name != "nt":
+            raise OSError("Kiosk background music currently requires Windows.")
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        self._winmm = ctypes.WinDLL("winmm")
+        self._send = self._winmm.mciSendStringW
+        self._send.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p)
+        self._send.restype = ctypes.c_ulong
+        self._get_error = self._winmm.mciGetErrorStringW
+        self._get_error.argtypes = (ctypes.c_ulong, ctypes.c_wchar_p, ctypes.c_uint)
+        self._get_error.restype = ctypes.c_int
+        self._opened = False
+        self._paused = False
+        try:
+            self._send_command(f'open "{path}" type mpegvideo alias {self._ALIAS}')
+            self._opened = True
+            self.set_volume(45)
+            self.play()
+        except Exception:
+            self.close()
+            raise
+
+    def _send_command(self, command: str) -> None:
+        code = self._send(command, None, 0, None)
+        if code:
+            message = ctypes.create_unicode_buffer(256)
+            if self._get_error(code, message, len(message)):
+                raise OSError(message.value)
+            raise OSError(f"Windows audio error {code}")
+
+    def play(self) -> None:
+        if self._opened:
+            self._send_command(f"play {self._ALIAS} repeat")
+            self._paused = False
+
+    def toggle(self) -> bool:
+        if self._paused:
+            self._send_command(f"resume {self._ALIAS}")
+            self._paused = False
+        else:
+            self._send_command(f"pause {self._ALIAS}")
+            self._paused = True
+        return not self._paused
+
+    def set_volume(self, percent: int) -> None:
+        if self._opened:
+            self._send_command(f"setaudio {self._ALIAS} volume to {max(0, min(100, percent)) * 10}")
+
+    def close(self) -> None:
+        if self._opened:
+            try:
+                self._send_command(f"close {self._ALIAS}")
+            except OSError:
+                pass
+            self._opened = False
 
 
 def _priced_extras(options: tuple[tuple[str, int], ...]) -> dict[str, tuple[str, int]]:
@@ -290,14 +355,26 @@ def _preferences_for_product(product: dict) -> tuple[str, ...]:
 
 class KioskView(ttk.Frame):
     def __init__(self, parent):
-        super().__init__(parent, padding=12)
+        super().__init__(parent, padding=6)
         self._cart_ids = itertools.count(1)
         self.cart: dict[int, dict] = {}
         self.products: list[dict] = []
         self.categories: list[dict] = []
         self.order_type: str | None = None
+        self.browse_only = False
         self._search_job = None
+        self._resize_render_job = None
         self._photo_refs = []
+        self.view_mode_var = tk.StringVar(value="Grid")
+        self.photo_size_var = tk.StringVar(value="Medium")
+        self._music_volume = 45
+        self._music_playing = True
+        try:
+            music_path = Path(__file__).resolve().parents[1] / "assets" / "bitebyte-background-music.mp3"
+            self._music = _BackgroundMusic(music_path)
+        except Exception as exc:
+            self._music = None
+            self._music_error = str(exc)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
         self._build_welcome()
@@ -305,7 +382,9 @@ class KioskView(ttk.Frame):
     def _build_welcome(self) -> None:
         for child in self.winfo_children():
             child.destroy()
+        self.columnconfigure(1, weight=0)
         self.order_type = None
+        self.browse_only = False
         self.cart.clear()
         panel = ttk.Frame(self, padding=40, style="Welcome.TFrame")
         panel.grid(row=0, column=0, sticky="nsew")
@@ -361,10 +440,66 @@ class KioskView(ttk.Frame):
                     row=row, column=0, pady=(0, 28)
                 )
                 row += 1
-        ttk.Button(panel, text="TOUCH TO START ORDER", style="Gold.TButton",
-                   command=self._choose_order_type).grid(
-            row=row, column=0, ipadx=25, ipady=7, pady=(10, 0)
+        actions = ttk.Frame(panel, style="Welcome.TFrame")
+        actions.grid(row=row, column=0, pady=(8, 0))
+        ttk.Button(actions, text="START ORDER", style="Gold.TButton",
+                   command=self._choose_order_type).pack(side="left", padx=6, ipadx=12)
+        ttk.Button(actions, text="VIEW MENU", style="Nav.TButton",
+                   command=self._browse_menu).pack(side="left", padx=6, ipadx=12, ipady=5)
+        row += 1
+        music_controls = self._build_music_controls(panel, welcome=True)
+        music_controls.grid(row=row, column=0, pady=(14, 0))
+
+    def _build_music_controls(self, parent, *, welcome: bool = False) -> ttk.Frame:
+        controls = ttk.Frame(parent, style="Welcome.TFrame" if welcome else "TFrame")
+        label_style = "WelcomeText.TLabel" if welcome else "TLabel"
+        if self._music is None:
+            ttk.Label(controls, text="Background music unavailable", style=label_style).pack(side="left")
+            return controls
+        self._music_button = ttk.Button(
+            controls,
+            text="♫ Music: On" if self._music_playing else "♫ Music: Off",
+            style="Nav.TButton",
+            command=self._toggle_music,
         )
+        self._music_button.pack(side="left", padx=(0, 8))
+        ttk.Label(controls, text="Volume", style=label_style).pack(side="left", padx=(0, 5))
+        self._music_volume_var = tk.DoubleVar(value=self._music_volume)
+        ttk.Scale(
+            controls,
+            from_=0,
+            to=100,
+            orient="horizontal",
+            length=110,
+            variable=self._music_volume_var,
+            command=self._set_music_volume,
+        ).pack(side="left")
+        return controls
+
+    def _toggle_music(self) -> None:
+        if self._music is None:
+            return
+        try:
+            self._music_playing = self._music.toggle()
+            self._music_button.configure(text="♫ Music: On" if self._music_playing else "♫ Music: Off")
+        except OSError as exc:
+            show_error(exc, "Could not control background music")
+
+    def _set_music_volume(self, value: str) -> None:
+        if self._music is None:
+            return
+        self._music_volume = int(float(value))
+        try:
+            self._music.set_volume(self._music_volume)
+        except OSError as exc:
+            show_error(exc, "Could not change music volume")
+
+    def _browse_menu(self) -> None:
+        """Show a full-width, view-only catalog without cart controls."""
+        self.order_type = None
+        self.browse_only = True
+        self.cart.clear()
+        self._build_ordering()
 
     def _brand_logo(self, size: tuple[int, int]):
         """Load the bundled kiosk logo at a size that fits the current screen."""
@@ -394,7 +529,7 @@ class KioskView(ttk.Frame):
         except (ImportError, OSError):
             return None
 
-    def _choose_order_type(self) -> None:
+    def _choose_order_type(self, on_selected=None) -> None:
         dialog = tk.Toplevel(self)
         dialog.title("Choose Order Type")
         dialog.transient(self.winfo_toplevel())
@@ -406,8 +541,14 @@ class KioskView(ttk.Frame):
 
         def choose(value: str) -> None:
             self.order_type = value
+            self.browse_only = False
             dialog.destroy()
-            self._build_ordering()
+            if hasattr(self, "order_title_var"):
+                self.order_title_var.set(f"{value} Order")
+            if on_selected:
+                on_selected()
+            else:
+                self._build_ordering()
 
         ttk.Button(box, text="Dine-In", command=lambda: choose("Dine-In")).pack(fill="x", pady=5, ipady=8)
         ttk.Button(box, text="Take-Out", command=lambda: choose("Take-Out")).pack(fill="x", pady=5, ipady=8)
@@ -417,31 +558,81 @@ class KioskView(ttk.Frame):
     def _build_ordering(self) -> None:
         for child in self.winfo_children():
             child.destroy()
-        self.columnconfigure(0, weight=4)
-        self.columnconfigure(1, weight=2)
+        self.columnconfigure(0, weight=1 if self.browse_only else 4)
+        self.columnconfigure(1, weight=0 if self.browse_only else 2)
+        # Row 0 is weighted for the centered welcome screen; keep the ordering
+        # header at its requested height and let the product area expand.
+        self.rowconfigure(0, weight=0)
         self.rowconfigure(1, weight=0)
         self.rowconfigure(2, weight=0)
 
         top = ttk.Frame(self)
-        top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 10))
-        logo = self._brand_logo((140, 94))
+        top.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 3))
+        top.columnconfigure(1, weight=1)
+        brand = ttk.Frame(top)
+        brand.grid(row=0, column=0, sticky="w")
+        logo = self._brand_logo((100, 68))
         if logo:
             self._ordering_logo_ref = logo
-            ttk.Label(top, image=logo, background=PAGE).pack(side="left", padx=(0, 10))
-        ttk.Label(top, text=f"{self.order_type} Order", style="MenuTitle.TLabel").pack(side="left")
-        ttk.Button(top, text="Start Over", command=self._confirm_reset).pack(side="right")
+            ttk.Label(brand, image=logo, background=PAGE).pack(side="left", padx=(0, 10))
+        self.order_title_var = tk.StringVar(
+            value=f"{self.order_type} Order" if self.order_type else "Browse the Menu"
+        )
+        ttk.Label(brand, textvariable=self.order_title_var, style="MenuTitle.TLabel").pack(side="left")
+        guide = ttk.Frame(top, padding=(6, 3), style="KioskGuide.TFrame")
+        guide.grid(row=0, column=1, sticky="ew", padx=14, pady=2)
+        ttk.Label(
+            guide, text="BUILD YOUR BITE", style="KioskGuideTitle.TLabel",
+            anchor="center", justify="center",
+        ).pack(fill="x", anchor="center")
+        actions = ttk.Frame(top)
+        actions.grid(row=0, column=2, sticky="e")
+        ttk.Button(
+            actions,
+            text="Start Over" if self.order_type else "Back to Welcome",
+            command=self._confirm_reset,
+            width=16 if self.browse_only else 12,
+            style="Nav.TButton",
+        ).pack(side="left", padx=(0, 10))
+        self._build_music_controls(actions).pack(side="left")
         search_row = ttk.Frame(self)
-        search_row.grid(row=1, column=0, sticky="ew", padx=(0, 12))
+        search_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(0, 12))
         ttk.Label(search_row, text="Search menu").pack(side="left")
         self.search_var = tk.StringVar()
-        self.search_entry = ttk.Entry(search_row, textvariable=self.search_var, width=28)
-        self.search_entry.pack(side="left", padx=(8, 15))
+        self.search_entry = ttk.Entry(search_row, textvariable=self.search_var, width=20)
+        self.search_entry.pack(side="left", padx=(8, 8))
+        ttk.Button(
+            search_row, text="Search", style="Nav.TButton", command=self._load_products
+        ).pack(side="left", padx=(0, 12))
+        self.search_entry.bind("<Return>", lambda _event: self._load_products())
         self.search_var.trace_add("write", self._search_changed)
+        ttk.Label(search_row, text="View").pack(side="left", padx=(0, 5))
+        view_picker = ttk.Combobox(
+            search_row, textvariable=self.view_mode_var, values=("Grid", "List"),
+            state="readonly", width=8,
+        )
+        view_picker.pack(side="left", padx=(0, 12))
+        view_picker.bind("<<ComboboxSelected>>", self._view_options_changed)
+        ttk.Label(search_row, text="Photo size").pack(side="left", padx=(0, 5))
+        size_picker = ttk.Combobox(
+            search_row, textvariable=self.photo_size_var, values=("Small", "Medium", "Large"),
+            state="readonly", width=9,
+        )
+        size_picker.pack(side="left")
+        size_picker.bind("<<ComboboxSelected>>", self._view_options_changed)
+        if self.browse_only:
+            guide_text = "1 Explore  →  2 Compare  →  3 Start Order"
+        else:
+            guide_text = "1 Browse  →  2 Customize  →  3 Checkout"
+        ttk.Label(search_row, text=guide_text, style="KioskGuideStep.TLabel").pack(
+            side="left", padx=(18, 0)
+        )
         self.category_var = tk.StringVar(value="All categories")
         category_shell = ttk.Frame(self)
-        category_shell.grid(row=2, column=0, sticky="ew", padx=(0, 12), pady=(4, 2))
+        category_shell.grid(row=2, column=0, columnspan=2,
+                            sticky="ew", padx=(0, 12), pady=(2, 0))
         category_shell.columnconfigure(0, weight=1)
-        self.category_canvas = tk.Canvas(category_shell, height=42, highlightthickness=0,
+        self.category_canvas = tk.Canvas(category_shell, height=32, highlightthickness=0,
                                          background=PAGE, borderwidth=0)
         self.category_canvas.grid(row=0, column=0, sticky="ew")
         category_scroll = ttk.Scrollbar(category_shell, orient="horizontal", command=self.category_canvas.xview)
@@ -457,13 +648,17 @@ class KioskView(ttk.Frame):
                 scrollregion=self.category_canvas.bbox("all")
             )
         )
-        body = ttk.Panedwindow(self, orient="horizontal")
-        body.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
         self.rowconfigure(3, weight=1)
-        menu_panel = ttk.Frame(body, padding=(0, 0, 10, 0))
-        cart_panel = ttk.Frame(body, padding=12, relief="groove")
-        body.add(menu_panel, weight=3)
-        body.add(cart_panel, weight=2)
+        if self.browse_only:
+            menu_panel = ttk.Frame(self, padding=(0, 0, 0, 0))
+            menu_panel.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(3, 0))
+        else:
+            body = ttk.Panedwindow(self, orient="horizontal")
+            body.grid(row=3, column=0, columnspan=2, sticky="nsew", pady=(3, 0))
+            menu_panel = ttk.Frame(body, padding=(0, 0, 10, 0))
+            cart_panel = ttk.Frame(body, padding=12, relief="groove")
+            body.add(menu_panel, weight=3)
+            body.add(cart_panel, weight=2)
 
         self.menu_canvas = tk.Canvas(menu_panel, highlightthickness=0, background=PAGE, borderwidth=0)
         menu_scroll = ttk.Scrollbar(menu_panel, orient="vertical", command=self.menu_canvas.yview)
@@ -478,39 +673,46 @@ class KioskView(ttk.Frame):
         self.menu_canvas.pack(side="left", fill="both", expand=True)
         menu_scroll.pack(side="right", fill="y")
 
-        cart_panel.columnconfigure(0, weight=1)
-        cart_panel.rowconfigure(1, weight=1)
-        self.cart_count_var = tk.StringVar(value="Your Cart - 0 items")
-        ttk.Label(cart_panel, textvariable=self.cart_count_var, style="MenuTitle.TLabel").grid(
-            row=0, column=0, sticky="w"
-        )
-        self.cart_tree = ttk.Treeview(cart_panel, columns=("qty", "amount"), show="tree headings", height=7)
-        self.cart_tree.heading("#0", text="Item")
-        self.cart_tree.heading("qty", text="Qty")
-        self.cart_tree.heading("amount", text="Subtotal")
-        self.cart_tree.column("#0", width=140, minwidth=100, stretch=True)
-        self.cart_tree.column("qty", width=42, minwidth=38, stretch=False, anchor="center")
-        self.cart_tree.column("amount", width=92, minwidth=82, stretch=False, anchor="e")
-        self.cart_tree.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
-        controls = ttk.Frame(cart_panel)
-        controls.grid(row=2, column=0, sticky="ew")
-        ttk.Button(controls, text="−", width=4, command=lambda: self._change_quantity(-1)).pack(side="left")
-        ttk.Button(controls, text="+", width=4, command=lambda: self._change_quantity(1)).pack(side="left", padx=4)
-        ttk.Button(controls, text="Delete", command=self._delete_selected).pack(side="left", padx=4)
-        self.total_var = tk.StringVar(value=php(0))
-        total_row = ttk.Frame(cart_panel)
-        total_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        ttk.Label(total_row, text="TOTAL", font=("Segoe UI", 11, "bold")).pack(side="left")
-        ttk.Label(total_row, textvariable=self.total_var, style="MetricValue.TLabel").pack(side="right")
-        ttk.Button(cart_panel, text="PROCEED TO CHECKOUT", command=self._preview_order).grid(
-            row=4, column=0, sticky="ew", pady=(10, 0), ipady=4
-        )
+        if not self.browse_only:
+            cart_panel.columnconfigure(0, weight=1)
+            cart_panel.rowconfigure(1, weight=1)
+            self.cart_count_var = tk.StringVar(value="Your Cart - 0 items")
+            ttk.Label(cart_panel, textvariable=self.cart_count_var, style="MenuTitle.TLabel").grid(
+                row=0, column=0, sticky="w"
+            )
+            self.cart_tree = ttk.Treeview(cart_panel, columns=("qty", "amount"), show="tree headings", height=7)
+            self.cart_tree.heading("#0", text="Item")
+            self.cart_tree.heading("qty", text="Qty")
+            self.cart_tree.heading("amount", text="Subtotal")
+            self.cart_tree.column("#0", width=140, minwidth=100, stretch=True)
+            self.cart_tree.column("qty", width=42, minwidth=38, stretch=False, anchor="center")
+            self.cart_tree.column("amount", width=92, minwidth=82, stretch=False, anchor="e")
+            self.cart_tree.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
+            controls = ttk.Frame(cart_panel)
+            controls.grid(row=2, column=0, sticky="ew")
+            ttk.Button(controls, text="−", width=4, command=lambda: self._change_quantity(-1)).pack(side="left")
+            ttk.Button(controls, text="+", width=4, command=lambda: self._change_quantity(1)).pack(side="left", padx=4)
+            ttk.Button(controls, text="Delete", command=self._delete_selected).pack(side="left", padx=4)
+            self.total_var = tk.StringVar(value=php(0))
+            total_row = ttk.Frame(cart_panel)
+            total_row.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+            ttk.Label(total_row, text="TOTAL", font=("Segoe UI", 11, "bold")).pack(side="left")
+            ttk.Label(total_row, textvariable=self.total_var, style="MetricValue.TLabel").pack(side="right")
+            ttk.Button(cart_panel, text="PROCEED TO CHECKOUT", command=self._preview_order).grid(
+                row=4, column=0, sticky="ew", pady=(10, 0), ipady=4
+            )
 
         self._load_categories()
         self._load_products()
 
     def _resize_menu_content(self, event) -> None:
         self.menu_canvas.itemconfigure(self.menu_window, width=event.width)
+        if self._resize_render_job:
+            self.after_cancel(self._resize_render_job)
+        self._resize_render_job = self.after(120, self._render_products)
+
+    def _view_options_changed(self, _event=None) -> None:
+        self._render_products()
 
     def _load_categories(self) -> None:
         try:
@@ -524,7 +726,7 @@ class KioskView(ttk.Frame):
                 ttk.Button(
                     self.category_buttons,
                     text=visible,
-                    style="CategorySelected.TButton" if selected else "CategoryPill.TButton",
+                    style="KioskCategorySelected.TButton" if selected else "KioskCategoryPill.TButton",
                     command=lambda value=label: self._choose_category(value),
                 ).pack(side="left", padx=(0, 7), pady=2)
             self.category_canvas.configure(scrollregion=self.category_canvas.bbox("all"))
@@ -558,16 +760,38 @@ class KioskView(ttk.Frame):
             show_error(exc, "Could not load menu")
 
     def _render_products(self) -> None:
+        self._resize_render_job = None
+        if not hasattr(self, "cards_frame") or not self.cards_frame.winfo_exists():
+            return
         for child in self.cards_frame.winfo_children():
             child.destroy()
         self._photo_refs = []
         if not self.products:
             ttk.Label(self.cards_frame, text="No menu items match your search.").grid(padx=20, pady=30)
             return
-        for column in range(3):
-            self.cards_frame.columnconfigure(column, weight=1, uniform="menu-card")
+
+        mode = self.view_mode_var.get()
+        selected_size = self.photo_size_var.get()
+        grid_photo_sizes = {"Small": (130, 82), "Medium": (180, 115), "Large": (250, 160)}
+        list_photo_sizes = {"Small": (110, 78), "Medium": (160, 110), "Large": (220, 150)}
+        photo_size = (list_photo_sizes if mode == "List" else grid_photo_sizes).get(
+            selected_size, grid_photo_sizes["Medium"]
+        )
+        available_width = self.menu_canvas.winfo_width()
+        if available_width < 160:
+            available_width = max(360, int(self.winfo_toplevel().winfo_width() * 0.58) - 24)
+        target_card_width = {"Small": 180, "Medium": 235, "Large": 350}.get(selected_size, 235)
+        columns = 1 if mode == "List" else max(1, min(4, available_width // target_card_width))
+        for column in range(4):
+            active = column < columns
+            self.cards_frame.columnconfigure(
+                column,
+                weight=1 if active else 0,
+                uniform="menu-card" if active and mode == "Grid" else "",
+            )
+
         for index, product in enumerate(self.products):
-            row, column = divmod(index, 3)
+            row, column = divmod(index, columns)
             can_order = bool(product["can_order"])
             card_style = "MenuCard.TFrame" if can_order else "OutOfStock.TFrame"
             text_style = "MenuCard.TLabel" if can_order else "OutOfStock.TLabel"
@@ -576,29 +800,54 @@ class KioskView(ttk.Frame):
             card = ttk.Frame(self.cards_frame, padding=10, style=card_style)
             card.grid(row=row, column=column, sticky="nsew", padx=6, pady=6)
             photo = self._product_photo(
-                product.get("image_path"), product["product_name"], disabled=not can_order
+                product.get("image_path"), product["product_name"], disabled=not can_order,
+                size=photo_size,
             )
             if photo:
                 image_label = ttk.Label(card, image=photo, style=text_style)
-                image_label.pack(pady=(0, 6))
                 self._photo_refs.append(photo)
             else:
-                ttk.Label(card, text="🍽", font=("Segoe UI Emoji", 26), style=text_style).pack(pady=(0, 3))
-            if not can_order:
-                ttk.Label(card, text="OUT OF STOCK", style="OutOfStockBadge.TLabel").pack(pady=(0, 4))
-            ttk.Label(card, text=product["product_name"], style=text_style,
-                      font=("Segoe UI", 11, "bold"),
-                      wraplength=210, justify="center").pack(fill="x")
-            ttk.Label(card, text=product["category_name"], style=category_style).pack()
-            ttk.Label(card, text=product["description"] or "", style=text_style, wraplength=210,
-                      justify="center").pack(fill="x", pady=(4, 2))
-            ttk.Label(card, text=php(product["price"]), style=price_style).pack(pady=3)
-            if can_order:
-                ttk.Button(card, text="+ Customize & Add", command=lambda p=product: self._customize(p)).pack(
-                    fill="x", pady=(3, 0)
-                )
+                image_label = ttk.Label(card, text="🍽", font=("Segoe UI Emoji", 26), style=text_style)
 
-    def _product_photo(self, path: str | None, product_name: str, *, disabled: bool = False):
+            if mode == "List":
+                card.columnconfigure(1, weight=1)
+                image_label.grid(row=0, column=0, rowspan=6, sticky="nw", padx=(0, 12))
+                detail_width = max(180, available_width - photo_size[0] - 84)
+                detail = ttk.Frame(card, style=card_style)
+                detail.grid(row=0, column=1, sticky="nsew")
+                if not can_order:
+                    ttk.Label(detail, text="OUT OF STOCK", style="OutOfStockBadge.TLabel").pack(anchor="w", pady=(0, 3))
+                ttk.Label(detail, text=product["product_name"], style=text_style,
+                          font=("Segoe UI", 11, "bold"), wraplength=detail_width,
+                          justify="left").pack(anchor="w", fill="x")
+                ttk.Label(detail, text=product["category_name"], style=category_style).pack(anchor="w")
+                ttk.Label(detail, text=product["description"] or "", style=text_style,
+                          wraplength=detail_width, justify="left").pack(anchor="w", fill="x", pady=(4, 2))
+                ttk.Label(detail, text=php(product["price"]), style=price_style).pack(anchor="w", pady=3)
+                if can_order and not self.browse_only:
+                    ttk.Button(detail, text="+ Customize & Add",
+                               command=lambda p=product: self._customize(p)).pack(anchor="w", pady=(3, 0))
+            else:
+                image_label.pack(pady=(0, 6))
+                wrap = max(120, int(available_width / columns) - 42)
+                if not can_order:
+                    ttk.Label(card, text="OUT OF STOCK", style="OutOfStockBadge.TLabel").pack(pady=(0, 4))
+                ttk.Label(card, text=product["product_name"], style=text_style,
+                          font=("Segoe UI", 11, "bold"), wraplength=wrap,
+                          justify="center").pack(fill="x")
+                ttk.Label(card, text=product["category_name"], style=category_style).pack()
+                ttk.Label(card, text=product["description"] or "", style=text_style,
+                          wraplength=wrap, justify="center").pack(fill="x", pady=(4, 2))
+                ttk.Label(card, text=php(product["price"]), style=price_style).pack(pady=3)
+                if can_order and not self.browse_only:
+                    ttk.Button(card, text="+ Customize & Add", command=lambda p=product: self._customize(p)).pack(
+                        fill="x", pady=(3, 0)
+                    )
+
+    def _product_photo(
+        self, path: str | None, product_name: str, *, disabled: bool = False,
+        size: tuple[int, int] = (220, 130),
+    ):
         try:
             from PIL import Image, ImageOps, ImageTk
             app_root = Path(__file__).resolve().parents[1]
@@ -620,7 +869,7 @@ class KioskView(ttk.Frame):
                 try:
                     with Image.open(candidate) as source:
                         image = ImageOps.fit(
-                            source.convert("RGB"), (220, 130), method=Image.LANCZOS
+                            source.convert("RGB"), size, method=Image.LANCZOS
                         )
                         if disabled:
                             image = ImageOps.colorize(
@@ -738,6 +987,9 @@ class KioskView(ttk.Frame):
         if not self.cart:
             messagebox.showinfo("Your cart is empty", "Add an item to your cart first.")
             return
+        if self.order_type is None:
+            self._choose_order_type(on_selected=self._preview_order)
+            return
         total = sum((self._line_total(line) for line in self.cart.values()), 0)
         lines = [f"{line['quantity']} × {line['name']} — {line['customization']} {php(self._line_total(line))}"
                  for line in self.cart.values()]
@@ -797,6 +1049,13 @@ class KioskView(ttk.Frame):
     def _confirm_reset(self) -> None:
         if not self.cart or messagebox.askyesno("Start over", "Clear your cart and start over?", parent=self):
             self._build_welcome()
+
+    def destroy(self) -> None:
+        """Stop playback when the app switches away from the customer kiosk."""
+        music = getattr(self, "_music", None)
+        if music is not None:
+            music.close()
+        super().destroy()
 
 
 
