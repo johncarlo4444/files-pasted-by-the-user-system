@@ -306,6 +306,9 @@ def normalize_menu_categories() -> None:
                 "Sides, Desserts & Drinks",
                 "Combos",
                 "Rice Meals",
+                "Breakfast & Brunch",
+                "Seafood",
+                "Soups & Salads",
             )
             for category_name in category_names:
                 cursor.execute(
@@ -368,6 +371,8 @@ def normalize_menu_categories() -> None:
         connection.close()
     ensure_asian_menu()
     ensure_american_menu()
+    ensure_pizza_pasta_menu()
+    ensure_new_category_menu()
 
 
 def ensure_asian_menu() -> None:
@@ -519,6 +524,248 @@ def ensure_american_menu() -> None:
                 raise RuntimeError("Required menu category is missing: American Classics")
 
             for product_name, description, price, image_path in products:
+                cursor.execute(
+                    "INSERT INTO products "
+                    "(category_id, product_name, description, price, image_path) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE image_path=VALUES(image_path)",
+                    (category[0], product_name, description, price, image_path),
+                )
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+
+def ensure_pizza_pasta_menu() -> None:
+    """Seed additional Pizza & Pasta choices with image paths ready for photos."""
+    products = (
+        (
+            "Pepperoni Pizza",
+            "Classic tomato and mozzarella pizza topped with savory pepperoni.",
+            "459.00",
+            "assets/menu/pepperoni-pizza.jpg",
+        ),
+        (
+            "BBQ Chicken Pizza",
+            "Smoky barbecue chicken, mozzarella, red onion, and cilantro on a crisp crust.",
+            "479.00",
+            "assets/menu/bbq-chicken-pizza.jpg",
+        ),
+        (
+            "Four Cheese Pizza",
+            "A golden pizza topped with mozzarella, cheddar, parmesan, and blue cheese.",
+            "499.00",
+            "assets/menu/four-cheese-pizza.jpg",
+        ),
+        (
+            "Hawaiian Pizza",
+            "Tomato, mozzarella, ham, and sweet pineapple baked on a hand-stretched crust.",
+            "449.00",
+            "assets/menu/hawaiian-pizza.jpg",
+        ),
+        (
+            "Spaghetti Bolognese",
+            "Spaghetti served with slow-simmered beef and tomato sauce.",
+            "329.00",
+            "assets/menu/spaghetti-bolognese.jpg",
+        ),
+        (
+            "Chicken Pesto Penne",
+            "Penne tossed with basil pesto, grilled chicken, and parmesan.",
+            "349.00",
+            "assets/menu/chicken-pesto-penne.jpg",
+        ),
+        (
+            "Shrimp Scampi Linguine",
+            "Linguine with shrimp, garlic butter, lemon, and parsley.",
+            "429.00",
+            "assets/menu/shrimp-scampi-linguine.jpg",
+        ),
+        (
+            "Lasagna Bolognese",
+            "Oven-baked pasta layered with beef ragù, creamy béchamel, and cheese.",
+            "389.00",
+            "assets/menu/lasagna-bolognese.jpg",
+        ),
+    )
+
+    connection = get_connection(select_database=True)
+    try:
+        cursor = connection.cursor()
+        try:
+            cursor.execute(
+                "SELECT category_id FROM categories WHERE category_name=%s",
+                ("Pizza & Pasta",),
+            )
+            category = cursor.fetchone()
+            if category is None:
+                raise RuntimeError("Required menu category is missing: Pizza & Pasta")
+
+            for product_name, description, price, image_path in products:
+                cursor.execute(
+                    "INSERT INTO products "
+                    "(category_id, product_name, description, price, image_path) "
+                    "VALUES (%s, %s, %s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE image_path=VALUES(image_path)",
+                    (category[0], product_name, description, price, image_path),
+                )
+        finally:
+            cursor.close()
+    finally:
+        connection.close()
+
+
+def ensure_new_category_menu() -> None:
+    """Seed popular dishes for Breakfast, Seafood, and Soups & Salads."""
+    products = (
+        (
+            "Breakfast & Brunch",
+            "Bacon, Egg & Cheese Breakfast Sandwich",
+            "Toasted bun filled with crispy bacon, a fried egg, and melted cheese.",
+            "189.00",
+            "assets/menu/bacon-egg-cheese-breakfast-sandwich.jpg",
+        ),
+        (
+            "Breakfast & Brunch",
+            "Classic Belgian Waffles",
+            "Golden waffles served with butter and maple syrup.",
+            "169.00",
+            "assets/menu/classic-belgian-waffles.jpg",
+        ),
+        (
+            "Breakfast & Brunch",
+            "Filipino Longsilog Breakfast Plate",
+            "Garlic fried rice, fried egg, and sweet Filipino longganisa.",
+            "229.00",
+            "assets/menu/filipino-longsilog-breakfast-plate.jpg",
+        ),
+        (
+            "Breakfast & Brunch",
+            "Breakfast Burrito",
+            "Flour tortilla filled with scrambled eggs, sausage, potatoes, and cheddar.",
+            "199.00",
+            "assets/menu/breakfast-burrito.jpg",
+        ),
+        (
+            "Breakfast & Brunch",
+            "Ham & Cheese Omelet",
+            "Fluffy eggs folded around savory ham and melted cheese, served with toast.",
+            "209.00",
+            "assets/menu/ham-cheese-omelet.jpg",
+        ),
+        (
+            "Breakfast & Brunch",
+            "Avocado Toast",
+            "Toasted bread topped with seasoned avocado, tomato, and a poached egg.",
+            "179.00",
+            "assets/menu/avocado-toast.jpg",
+        ),
+        (
+            "Seafood",
+            "Classic Fish & Chips",
+            "Crispy battered fish served with golden fries and tartar sauce.",
+            "329.00",
+            "assets/menu/classic-fish-and-chips.jpg",
+        ),
+        (
+            "Seafood",
+            "Garlic Butter Shrimp",
+            "Juicy shrimp sautéed in garlic butter with a touch of lemon.",
+            "359.00",
+            "assets/menu/garlic-butter-shrimp.jpg",
+        ),
+        (
+            "Seafood",
+            "Grilled Salmon Plate",
+            "Grilled salmon fillet with seasonal vegetables and lemon butter.",
+            "499.00",
+            "assets/menu/grilled-salmon-plate.jpg",
+        ),
+        (
+            "Seafood",
+            "Crispy Fish Sandwich",
+            "Crispy fish fillet, lettuce, and tartar sauce in a toasted bun.",
+            "219.00",
+            "assets/menu/crispy-fish-sandwich.jpg",
+        ),
+        (
+            "Seafood",
+            "Shrimp Tempura",
+            "Lightly battered shrimp fried crisp and served with dipping sauce.",
+            "329.00",
+            "assets/menu/shrimp-tempura.jpg",
+        ),
+        (
+            "Seafood",
+            "Fish Tacos",
+            "Seasoned fish in soft tortillas with crunchy slaw and creamy sauce.",
+            "299.00",
+            "assets/menu/fish-tacos.jpg",
+        ),
+        (
+            "Seafood",
+            "Grilled Garlic Butter Squid",
+            "Tender grilled squid brushed with garlic butter and fresh lemon.",
+            "389.00",
+            "assets/menu/grilled-garlic-butter-squid.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Classic Caesar Salad",
+            "Crisp romaine, parmesan, croutons, and creamy Caesar dressing.",
+            "199.00",
+            "assets/menu/classic-caesar-salad.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Fresh Garden Salad",
+            "Mixed greens, tomato, cucumber, and carrots with house dressing.",
+            "169.00",
+            "assets/menu/fresh-garden-salad.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Creamy Mushroom Soup",
+            "Warm cream soup with sautéed mushrooms and herbs.",
+            "149.00",
+            "assets/menu/creamy-mushroom-soup.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Tomato Basil Soup",
+            "Smooth tomato soup simmered with basil and finished with cream.",
+            "149.00",
+            "assets/menu/tomato-basil-soup.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Chicken Noodle Soup",
+            "Comforting chicken broth with tender chicken, vegetables, and noodles.",
+            "169.00",
+            "assets/menu/chicken-noodle-soup.jpg",
+        ),
+        (
+            "Soups & Salads",
+            "Greek Salad",
+            "Tomato, cucumber, olives, red onion, and feta with a light vinaigrette.",
+            "189.00",
+            "assets/menu/greek-salad.jpg",
+        ),
+    )
+
+    connection = get_connection(select_database=True)
+    try:
+        cursor = connection.cursor()
+        try:
+            for category_name, product_name, description, price, image_path in products:
+                cursor.execute(
+                    "SELECT category_id FROM categories WHERE category_name=%s",
+                    (category_name,),
+                )
+                category = cursor.fetchone()
+                if category is None:
+                    raise RuntimeError(f"Required menu category is missing: {category_name}")
                 cursor.execute(
                     "INSERT INTO products "
                     "(category_id, product_name, description, price, image_path) "

@@ -1,4 +1,4 @@
-"""Run the World Fast Food Express kiosk and staff desktop application."""
+
 
 from __future__ import annotations
 

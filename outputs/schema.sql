@@ -123,6 +123,12 @@ INSERT INTO categories (category_id, category_name) VALUES
     (7, 'Rice Meals')
 ON DUPLICATE KEY UPDATE category_name = VALUES(category_name);
 
+INSERT INTO categories (category_name) VALUES
+    ('Breakfast & Brunch'),
+    ('Seafood'),
+    ('Soups & Salads')
+ON DUPLICATE KEY UPDATE category_name = VALUES(category_name);
+
 INSERT INTO products (category_id, product_name, description, price, is_available) VALUES
     (1, 'Classic Double Cheeseburger', 'Two juicy beef patties, melted cheddar, lettuce, tomato, pickles, and house sauce.', 249.00, TRUE),
     (1, 'Garlic Butter Ribeye Steak', 'Grilled premium ribeye steak topped with herb garlic butter and served with vegetables.', 899.00, TRUE),
@@ -137,6 +143,83 @@ INSERT INTO products (category_id, product_name, description, price, is_availabl
     (5, 'Italian Chocolate Gelato', 'Rich, velvety dark chocolate gelato.', 150.00, TRUE),
     (5, 'Iced Matcha Green Tea Latte', 'Japanese green tea whisked with cold milk and served over ice.', 165.00, TRUE)
 ON DUPLICATE KEY UPDATE product_name = VALUES(product_name);
+
+-- Keep image paths ready so these cards show their bundled photos when present.
+INSERT INTO products (category_id, product_name, description, price, image_path, is_available) VALUES
+    (2, 'Pepperoni Pizza', 'Classic tomato and mozzarella pizza topped with savory pepperoni.', 459.00, 'assets/menu/pepperoni-pizza.jpg', TRUE),
+    (2, 'BBQ Chicken Pizza', 'Smoky barbecue chicken, mozzarella, red onion, and cilantro on a crisp crust.', 479.00, 'assets/menu/bbq-chicken-pizza.jpg', TRUE),
+    (2, 'Four Cheese Pizza', 'A golden pizza topped with mozzarella, cheddar, parmesan, and blue cheese.', 499.00, 'assets/menu/four-cheese-pizza.jpg', TRUE),
+    (2, 'Hawaiian Pizza', 'Tomato, mozzarella, ham, and sweet pineapple baked on a hand-stretched crust.', 449.00, 'assets/menu/hawaiian-pizza.jpg', TRUE),
+    (2, 'Spaghetti Bolognese', 'Spaghetti served with slow-simmered beef and tomato sauce.', 329.00, 'assets/menu/spaghetti-bolognese.jpg', TRUE),
+    (2, 'Chicken Pesto Penne', 'Penne tossed with basil pesto, grilled chicken, and parmesan.', 349.00, 'assets/menu/chicken-pesto-penne.jpg', TRUE),
+    (2, 'Shrimp Scampi Linguine', 'Linguine with shrimp, garlic butter, lemon, and parsley.', 429.00, 'assets/menu/shrimp-scampi-linguine.jpg', TRUE),
+    (2, 'Lasagna Bolognese', 'Oven-baked pasta layered with beef ragù, creamy béchamel, and cheese.', 389.00, 'assets/menu/lasagna-bolognese.jpg', TRUE)
+ON DUPLICATE KEY UPDATE image_path = VALUES(image_path);
+
+-- Seed popular choices in the three additional menu categories.
+INSERT INTO products (category_id, product_name, description, price, image_path, is_available)
+SELECT c.category_id, menu.product_name, menu.description, menu.price, menu.image_path, TRUE
+FROM (
+    SELECT 'Breakfast & Brunch' AS category_name, 'Bacon, Egg & Cheese Breakfast Sandwich' AS product_name,
+           'Toasted bun filled with crispy bacon, a fried egg, and melted cheese.' AS description,
+           189.00 AS price, 'assets/menu/bacon-egg-cheese-breakfast-sandwich.jpg' AS image_path
+    UNION ALL SELECT 'Breakfast & Brunch', 'Classic Belgian Waffles',
+           'Golden waffles served with butter and maple syrup.', 169.00,
+           'assets/menu/classic-belgian-waffles.jpg'
+    UNION ALL SELECT 'Breakfast & Brunch', 'Filipino Longsilog Breakfast Plate',
+           'Garlic fried rice, fried egg, and sweet Filipino longganisa.', 229.00,
+           'assets/menu/filipino-longsilog-breakfast-plate.jpg'
+    UNION ALL SELECT 'Breakfast & Brunch', 'Breakfast Burrito',
+           'Flour tortilla filled with scrambled eggs, sausage, potatoes, and cheddar.', 199.00,
+           'assets/menu/breakfast-burrito.jpg'
+    UNION ALL SELECT 'Breakfast & Brunch', 'Ham & Cheese Omelet',
+           'Fluffy eggs folded around savory ham and melted cheese, served with toast.', 209.00,
+           'assets/menu/ham-cheese-omelet.jpg'
+    UNION ALL SELECT 'Breakfast & Brunch', 'Avocado Toast',
+           'Toasted bread topped with seasoned avocado, tomato, and a poached egg.', 179.00,
+           'assets/menu/avocado-toast.jpg'
+    UNION ALL SELECT 'Seafood', 'Classic Fish & Chips',
+           'Crispy battered fish served with golden fries and tartar sauce.', 329.00,
+           'assets/menu/classic-fish-and-chips.jpg'
+    UNION ALL SELECT 'Seafood', 'Garlic Butter Shrimp',
+           'Juicy shrimp sautéed in garlic butter with a touch of lemon.', 359.00,
+           'assets/menu/garlic-butter-shrimp.jpg'
+    UNION ALL SELECT 'Seafood', 'Grilled Salmon Plate',
+           'Grilled salmon fillet with seasonal vegetables and lemon butter.', 499.00,
+           'assets/menu/grilled-salmon-plate.jpg'
+    UNION ALL SELECT 'Seafood', 'Crispy Fish Sandwich',
+           'Crispy fish fillet, lettuce, and tartar sauce in a toasted bun.', 219.00,
+           'assets/menu/crispy-fish-sandwich.jpg'
+    UNION ALL SELECT 'Seafood', 'Shrimp Tempura',
+           'Lightly battered shrimp fried crisp and served with dipping sauce.', 329.00,
+           'assets/menu/shrimp-tempura.jpg'
+    UNION ALL SELECT 'Seafood', 'Fish Tacos',
+           'Seasoned fish in soft tortillas with crunchy slaw and creamy sauce.', 299.00,
+           'assets/menu/fish-tacos.jpg'
+    UNION ALL SELECT 'Seafood', 'Grilled Garlic Butter Squid',
+           'Tender grilled squid brushed with garlic butter and fresh lemon.', 389.00,
+           'assets/menu/grilled-garlic-butter-squid.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Classic Caesar Salad',
+           'Crisp romaine, parmesan, croutons, and creamy Caesar dressing.', 199.00,
+           'assets/menu/classic-caesar-salad.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Fresh Garden Salad',
+           'Mixed greens, tomato, cucumber, and carrots with house dressing.', 169.00,
+           'assets/menu/fresh-garden-salad.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Creamy Mushroom Soup',
+           'Warm cream soup with sautéed mushrooms and herbs.', 149.00,
+           'assets/menu/creamy-mushroom-soup.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Tomato Basil Soup',
+           'Smooth tomato soup simmered with basil and finished with cream.', 149.00,
+           'assets/menu/tomato-basil-soup.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Chicken Noodle Soup',
+           'Comforting chicken broth with tender chicken, vegetables, and noodles.', 169.00,
+           'assets/menu/chicken-noodle-soup.jpg'
+    UNION ALL SELECT 'Soups & Salads', 'Greek Salad',
+           'Tomato, cucumber, olives, red onion, and feta with a light vinaigrette.', 189.00,
+           'assets/menu/greek-salad.jpg'
+) AS menu
+JOIN categories c ON c.category_name = menu.category_name
+ON DUPLICATE KEY UPDATE image_path = VALUES(image_path);
 
 INSERT INTO inventory (item_name, stock_quantity, unit, min_stock_level, status) VALUES
     ('Beef Patties', 200, 'pcs', 25, 'Available'),
